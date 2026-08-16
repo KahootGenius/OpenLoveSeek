@@ -29,10 +29,6 @@ Built with Expo / React Native (Android-focused). The UI is in Simplified Chines
 **Proactive**
 - 主动消息 (outreach): the app pre-writes a few of her messages and hands them to the OS as scheduled notifications, so she can text you first even on Chinese ROMs that freeze apps in the background
 
-**Special modes (opt-in)**
-- 病娇 (yandere) mode: vibration, biometric screen-lock, leave-holds, and demanded phrases — all with cooldowns and failsafe releases
-- Master mode: honorifics, rules, and discipline tracking for that flavor of roleplay
-
 **Data & safety**
 - Full export/import backups (zip); an automatic safety export is written before any restore
 - Biometric app lock
