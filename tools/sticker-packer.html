@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>LoveSeek 表情包打包器</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  body { font-family: -apple-system, "PingFang SC", sans-serif; max-width: 760px;
+         margin: 40px auto; padding: 0 20px; color: #333; }
+  h1 { font-size: 22px; }
+  .hint { color: #888; font-size: 14px; line-height: 1.6; }
+  .drop { border: 2px dashed #bbb; border-radius: 12px; padding: 40px; text-align: center;
+          color: #888; margin: 20px 0; cursor: pointer; }
+  .drop.over { border-color: #3a6ea5; color: #3a6ea5; }
+  .row { display: flex; gap: 12px; align-items: center; margin-bottom: 10px;
+         background: #f7f7f7; border-radius: 10px; padding: 10px; }
+  .row img { width: 64px; height: 64px; object-fit: contain; border-radius: 8px; background: #fff; }
+  .row input { padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+  .row .label { width: 130px; }
+  .row .desc { flex: 1; }
+  .row button { border: none; background: none; color: #c0392b; font-size: 16px; cursor: pointer; }
+  .actions { margin-top: 20px; display: flex; gap: 12px; align-items: center; }
+  .export { background: #3a6ea5; color: #fff; border: none; border-radius: 10px;
+            padding: 12px 22px; font-size: 15px; cursor: pointer; }
+  .export:disabled { opacity: .4; cursor: default; }
+  .count { color: #888; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>LoveSeek 表情包打包器</h1>
+<p class="hint">
+  1. 拖入或选择表情图片（png/jpg/webp/gif，单张 ≤2MB，GIF 动图也可）。<br>
+  2. 给每张写「标签」（模型用它来发送，≤20字）和「描述」（让模型理解画面内容与适用情绪——描述会进入每次请求，简洁为佳）。<br>
+  3. 导出 zip，然后在 App 的 设置 → 导入表情包 中选择它。
+</p>
+<div class="drop" id="drop">点击选择图片，或拖拽到这里</div>
+<input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+<div id="list"></div>
+<div class="actions">
+  <button class="export" id="export" disabled>导出 stickers.zip</button>
+  <span class="count" id="count"></span>
+</div>
+<script>
+const items = [];
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file');
+const list = document.getElementById('list');
+const exportBtn = document.getElementById('export');
+const count = document.getElementById('count');
+
+drop.onclick = () => fileInput.click();
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); };
+fileInput.onchange = () => addFiles(fileInput.files);
+
+function addFiles(files) {
+  for (const f of files) {
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(f.type)) continue;
+    if (f.size > 2 * 1024 * 1024) { alert(`${f.name} 超过 2MB，已跳过`); continue; }
+    // Label intentionally starts EMPTY: prefiling from the filename ships
+    // meaningless labels (hex camera names) that the model then has to emit.
+    items.push({ file: f, label: '', desc: '' });
+  }
+  render();
+}
+
+function render() {
+  list.innerHTML = '';
+  items.forEach((it, i) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(it.file);
+    const label = document.createElement('input');
+    label.className = 'label'; label.placeholder = '标签（如：开心）';
+    label.value = it.label; label.maxLength = 20;
+    label.oninput = () => { it.label = label.value; refresh(); };
+    const desc = document.createElement('input');
+    desc.className = 'desc'; desc.placeholder = '描述（如：她开心地原地跳了起来，适合庆祝）';
+    desc.value = it.desc;
+    desc.oninput = () => { it.desc = desc.value; refresh(); };
+    const del = document.createElement('button');
+    del.textContent = '✕';
+    del.onclick = () => { items.splice(i, 1); render(); };
+    row.append(img, label, desc, del);
+    list.appendChild(row);
+  });
+  refresh();
+}
+
+function refresh() {
+  const ready = items.length > 0 && items.every((it) => it.label.trim() && it.desc.trim());
+  exportBtn.disabled = !ready;
+  count.textContent = items.length
+    ? `${items.length} 张${ready ? '，可以导出' : '——每张都需要标签和描述'}`
+    : '';
+}
+
+exportBtn.onclick = async () => {
+  const zip = new JSZip();
+  const manifest = [];
+  const used = new Set();
+  items.forEach((it, i) => {
+    const ext = it.file.name.split('.').pop().toLowerCase();
+    let base = it.label.trim().replace(/[^\w一-鿿-]/g, '') || `sticker${i + 1}`;
+    while (used.has(base)) base += '_';
+    used.add(base);
+    const name = `${base}.${ext}`;
+    zip.file(name, it.file);
+    manifest.push({ file: name, label: it.label.trim(), desc: it.desc.trim() });
+  });
+  zip.file('stickers.json', JSON.stringify(manifest, null, 2));
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'stickers.zip';
+  a.click();
+};
+</script>
+</body>
+</html>

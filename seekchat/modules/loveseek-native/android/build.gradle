@@ -1,0 +1,21 @@
+apply plugin: 'com.android.library'
+
+group = 'expo.modules.loveseeknative'
+version = '0.1.0'
+
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useExpoPublishing()
+// Sets compileSdk/minSdk/targetSdk from the root project (AGP hard-errors on a
+// library module without compileSdk) and lint abortOnError=false.
+useDefaultAndroidSdkVersions()
+
+android {
+  namespace "expo.modules.loveseeknative"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}

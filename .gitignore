@@ -1,0 +1,12 @@
+.DS_Store
+node_modules/
+
+# local build pipeline
+seekchat/dist/
+seekchat/credentials.json
+*.jks
+*.log
+
+# local build/debug residue
+cache-report.txt
+.gradle/
