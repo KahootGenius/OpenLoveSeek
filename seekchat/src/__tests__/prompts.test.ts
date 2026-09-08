@@ -98,6 +98,57 @@ describe('overrides + rendering', () => {
     );
   });
 
+  it('renders the variety nudges', () => {
+    expect(renderPrompt('variety.structure', { pattern: '2段·长' })).toContain('2段·长');
+    expect(renderPrompt('variety.length')).toContain('长');
+  });
+
+  it('renders the group director reply-guarantee nudge', () => {
+    expect(renderPrompt('group.mustreply')).toContain('必须');
+  });
+
+  it('group.modadmin teaches 撤回:名字 alongside the existing v2.5 powers (v2.8)', () => {
+    const s = renderPrompt('group.modadmin', { targets: '比你级别低的成员' });
+    expect(s).toContain('[撤回:名字]');
+    expect(s).toContain('[禁言:名字|分钟]');
+    expect(s).toContain('比你级别低的成员');
+  });
+
+  it('renders the new group.modowner — owner-only agency markers (v2.8)', () => {
+    const s = renderPrompt('group.modowner', { userName: '老板' });
+    expect(s).toContain('[任命:名字]');
+    expect(s).toContain('[罢免:名字]');
+    expect(s).toContain('[移出:名字]');
+    expect(s).toContain('[转让群主:名字]');
+    expect(s).toContain('老板'); // transfer-back-to-user is explicitly taught by name
+  });
+
+  it('renders the 照片 daily-cap substitution', () => {
+    expect(renderPrompt('image.section', { cap: 5 })).toContain('5');
+  });
+
+  it('renders the 照片 narration-does-nothing warning (field report)', () => {
+    const s = renderPrompt('image.section', { cap: 5 });
+    expect(s).toContain('（给你拍了张照片）');
+    expect(s).toContain('收不到');
+    expect(s).toContain('[照片:场景]');
+  });
+
+  it('teaches the 实拍|场景 scene-only discriminator alongside the selfie form (v2.8)', () => {
+    const s = renderPrompt('image.section', { cap: 5 });
+    expect(s).toContain('[照片:实拍|场景]');
+    // the explicit which-form rule: self-in-frame vs. things she sees
+    expect(s).toContain('[照片:场景]');
+    expect(s).toContain('5'); // {{cap}} substitution still intact
+    expect(s).toContain('（给你拍了张照片）'); // narration-negative line still intact
+  });
+
+  it('repair.narration rescues a narrated SCENE shot to 实拍|场景, not just the selfie form (v2.8 fix)', () => {
+    const s = renderPrompt('repair.narration');
+    expect(s).toContain('[照片:场景]');
+    expect(s).toContain('[照片:实拍|场景]');
+  });
+
   it('extractVars lists unique placeholder names in order', () => {
     expect(extractVars('a {{one}} b {{two}} {{one}}')).toEqual(['one', 'two']);
   });

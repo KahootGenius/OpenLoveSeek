@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { getPref, setPref } from './db';
-import { DEFAULT_MODEL } from './constants';
+import { DEFAULT_MODEL, HISTORY_BUDGET } from './constants';
 import type { DeliveryMode, ModelId } from './types';
 import type { UsageMode } from './usage';
 
@@ -9,6 +9,26 @@ const KEY_NAME = 'deepseek_api_key';
 export const getApiKey = (): Promise<string | null> => SecureStore.getItemAsync(KEY_NAME);
 export const setApiKey = (key: string): Promise<void> =>
   SecureStore.setItemAsync(KEY_NAME, key.trim());
+
+// fal.ai key (v2.6): BYO, stored exactly like the DeepSeek key above.
+const FAL_KEY_NAME = 'fal_api_key';
+
+export const getFalKey = (): Promise<string | null> => SecureStore.getItemAsync(FAL_KEY_NAME);
+export const setFalKey = (key: string): Promise<void> =>
+  SecureStore.setItemAsync(FAL_KEY_NAME, key.trim());
+
+// 图片功能: master switch for persona reference images + chat-time photos.
+// Default off — no fal calls happen until the user opts in with their own key.
+export const getImageFeature = (): boolean => getPref('imageFeature') === '1';
+export const setImageFeature = (on: boolean): void => setPref('imageFeature', on ? '1' : '0');
+
+// 每日照片上限 (per conversation). Default 5, clamped 1..50.
+export const getImageDailyCap = (): number => {
+  const n = parseInt(getPref('imageDailyCap') ?? '', 10);
+  return Number.isNaN(n) ? 5 : Math.min(50, Math.max(1, n));
+};
+export const setImageDailyCap = (n: number): void =>
+  setPref('imageDailyCap', String(Math.min(50, Math.max(1, n))));
 
 const VALID_MODELS: ModelId[] = ['deepseek-v4-flash', 'deepseek-v4-pro'];
 
@@ -103,3 +123,68 @@ export const setLocationEnabled = (on: boolean): void =>
 export const getManualPlace = (): string | null => getPref('manualPlace');
 export const setManualPlace = (place: string): void =>
   setPref('manualPlace', place.trim());
+
+// MiniMax key (v2.7): BYO, stored exactly like the DeepSeek/fal keys above.
+const MINIMAX_KEY_NAME = 'minimax_api_key';
+
+export const getMiniMaxKey = (): Promise<string | null> =>
+  SecureStore.getItemAsync(MINIMAX_KEY_NAME);
+export const setMiniMaxKey = (key: string): Promise<void> =>
+  SecureStore.setItemAsync(MINIMAX_KEY_NAME, key.trim());
+
+// 语音功能: master switch for MiniMax TTS (朗读 action + auto-play). Default
+// off — no MiniMax calls happen until the user opts in with their own key.
+export const getVoiceFeature = (): boolean => getPref('voiceFeature') === '1';
+export const setVoiceFeature = (on: boolean): void => setPref('voiceFeature', on ? '1' : '0');
+
+// 区域: MiniMax Key and voice_id are each bound to whichever region issued
+// them — 国际 (global, default) vs 国内 (cn). See MINIMAX_HOSTS in minimax.ts.
+export type VoiceRegion = 'global' | 'cn';
+export const getVoiceRegion = (): VoiceRegion =>
+  getPref('voiceRegion') === 'cn' ? 'cn' : 'global';
+export const setVoiceRegion = (r: VoiceRegion): void => setPref('voiceRegion', r);
+
+// 默认 Voice ID: global fallback when a persona has no voiceId of its own
+// (schema v18). Empty string means "not configured yet".
+export const getVoiceId = (): string => getPref('voiceId') ?? '';
+export const setVoiceId = (id: string): void => setPref('voiceId', id.trim());
+
+// 语速: passed straight through to voice_setting.speed. Default 1.0, clamped
+// to MiniMax's documented 0.5–2.0 range.
+export const getVoiceSpeed = (): number => {
+  const n = parseFloat(getPref('voiceSpeed') ?? '');
+  return Number.isNaN(n) ? 1.0 : Math.min(2.0, Math.max(0.5, n));
+};
+export const setVoiceSpeed = (speed: number): void =>
+  setPref('voiceSpeed', String(Math.min(2.0, Math.max(0.5, speed))));
+
+// 括号内容也朗读: （…）stage directions are skipped by default (off); when on,
+// the inner text is read (parens dropped). See voicetext.ts's prepareSpeechText.
+export const getVoiceReadParens = (): boolean => getPref('voiceReadParens') === '1';
+export const setVoiceReadParens = (on: boolean): void =>
+  setPref('voiceReadParens', on ? '1' : '0');
+
+// 自动朗读: new completed replies play automatically while the chat is
+// focused (burst-aware). Default off.
+export const getVoiceAutoplay = (): boolean => getPref('voiceAutoplay') === '1';
+export const setVoiceAutoplay = (on: boolean): void => setPref('voiceAutoplay', on ? '1' : '0');
+
+// 每日字符上限: global day counter (voiceDayKey in voicetext.ts), not per
+// conversation. Default 20000, clamped 1000..200000.
+export const getVoiceDailyCap = (): number => {
+  const n = parseInt(getPref('voiceDailyCap') ?? '', 10);
+  return Number.isNaN(n) ? 20000 : Math.min(200000, Math.max(1000, n));
+};
+export const setVoiceDailyCap = (n: number): void =>
+  setPref('voiceDailyCap', String(Math.min(200000, Math.max(1000, n))));
+
+// 上下文长度 (v2.8): per-turn history budget (estimated tokens) fed to
+// selectWindow — the cost knob. Default HISTORY_BUDGET, clamped
+// [500, HISTORY_BUDGET*4] (covers the 短/中/长 tiers in context.ts's
+// WINDOW_TIERS with headroom for a custom value).
+export const getHistoryBudget = (): number => {
+  const n = parseInt(getPref('historyBudget') ?? '', 10);
+  return Number.isNaN(n) ? HISTORY_BUDGET : Math.min(HISTORY_BUDGET * 4, Math.max(500, n));
+};
+export const setHistoryBudget = (n: number): void =>
+  setPref('historyBudget', String(Math.min(HISTORY_BUDGET * 4, Math.max(500, n))));

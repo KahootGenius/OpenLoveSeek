@@ -51,7 +51,9 @@ export interface DmPromptParts {
   usageInstructions?: string | null;
   memoryInstructions?: string | null;
   tic?: string | null;
+  variety?: string | null;
   stickers?: string | null;
+  photos?: string | null;
   yandere?: string | null;
   masterCorrection?: string | null;
   master?: string | null;
@@ -63,6 +65,37 @@ export interface DmPromptParts {
   summary?: string | null;
   memory?: string | null;
   diary?: string | null;
+}
+
+export interface OutreachPromptParts {
+  persona: string;
+  coreTruth: string;
+  examples?: string | null;
+  profile?: string | null;
+  grounding: string;
+  memoryInstructions?: string | null;
+  summary?: string | null;
+  memory?: string | null;
+}
+
+/** Outreach pre-writing uses the same lanes as a DM turn: rules instruct,
+ *  model-authored summary/memory ride as guarded evidence. Section order
+ *  matches the legacy concatenated system prompt. */
+export function composeOutreachPrompt(parts: OutreachPromptParts): ComposedPromptEnvelope {
+  return composePromptEnvelope({
+    instructions: [
+      { key: 'persona', content: parts.persona },
+      { key: 'persona.examples', content: parts.examples },
+      { key: 'persona.profile', content: parts.profile },
+      { key: 'core.truth', content: parts.coreTruth },
+      { key: 'realism.grounding', content: parts.grounding },
+      { key: 'memory.instructions', content: parts.memoryInstructions },
+    ],
+    evidence: [
+      { key: 'summary.rolling', content: parts.summary },
+      { key: 'memory.section', content: parts.memory },
+    ],
+  });
 }
 
 export function composeDmPrompt(parts: DmPromptParts): ComposedPromptEnvelope {
@@ -77,7 +110,9 @@ export function composeDmPrompt(parts: DmPromptParts): ComposedPromptEnvelope {
       { key: 'usage.instructions', content: parts.usageInstructions },
       { key: 'memory.instructions', content: parts.memoryInstructions },
       { key: 'tic.nudge', content: parts.tic },
+      { key: 'variety.nudge', content: parts.variety },
       { key: 'stickers.section', content: parts.stickers },
+      { key: 'image.section', content: parts.photos },
       { key: 'yandere.section', content: parts.yandere },
       { key: 'master.correction', content: parts.masterCorrection },
       { key: 'master.section', content: parts.master },

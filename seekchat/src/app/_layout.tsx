@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { Stack } from 'expo-router';
 import { getPref, migrate, setPref } from '../lib/db';
 import { runAutoReachSweep } from '../lib/autoreach';
+import { sweepStalePendingImages } from '../lib/engine';
 import { isExpoGo } from '../lib/env';
 import { getKeepAlive } from '../lib/settings';
 import { ThemeProvider } from '../lib/theme-context';
@@ -14,6 +15,10 @@ const bg = () => require('../lib/background') as typeof import('../lib/backgroun
 // Compiler (on by default in SDK 57) may drop "pure" callbacks whose result
 // is unused. Here it runs once at bundle load, before any screen can render.
 migrate();
+// 照片 (v2.6): fail any row an app kill left stuck 'pending' — before any
+// conversation renders, so a dead spinner is never shown. Pure DB work, no
+// notifications involved, so (unlike the block below) it runs in Expo Go too.
+sweepStalePendingImages();
 // Background machinery must never be EVALUATED in Expo Go: expo-notifications
 // throws at import time there (Android push removal, SDK 53+). In real builds
 // the synchronous require also defines the headless task at bundle load.

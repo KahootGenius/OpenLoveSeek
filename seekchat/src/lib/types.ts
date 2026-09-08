@@ -1,7 +1,9 @@
 export type Role = 'user' | 'assistant';
+export type GroupRole = 'admin' | 'member';
 export type MessageStatus = 'complete' | 'interrupted';
 export type MessageKind =
-  | 'normal' | 'trigger' | 'pat' | 'sticker' | 'meta' | 'game' | 'transfer' | 'experience';
+  | 'normal' | 'trigger' | 'pat' | 'sticker' | 'meta' | 'game' | 'transfer' | 'experience'
+  | 'recall' | 'redpacket' | 'image';
 export type DeliveryMode = 'typewriter' | 'simulated';
 export type ModelId = 'deepseek-v4-flash' | 'deepseek-v4-pro';
 
@@ -12,6 +14,9 @@ export interface Persona {
   summaryPrompt: string | null;
   avatarUri: string | null; // data: URI (resized base64 jpeg) or null
   proConfig: string | null; // JSON ProConfig (schema v3) or null
+  appearancePrompt: string | null; // 照片 (schema v17): her look, for ref-image generation
+  refsFrozen: number; // 0 | 1 — once frozen, ref_images are fixed until 清空重来 (schema v17)
+  voiceId: string | null; // 语音 (schema v18): her MiniMax voice_id; null falls back to the global default
   createdAt: number;
   updatedAt: number;
 }
@@ -73,6 +78,7 @@ export interface Conversation {
   masterHonorific: string | null; // character-authored required address (schema v7)
   masterRules: string | null; // character-authored rules, newline-joined (schema v7)
   charBalance: number | null; // 转账 wallet (schema v10); null = seed from persona initBalance
+  avatarUri: string | null; // group portrait (schema v15); DMs keep null
   kind: string; // 'dm' | 'group' (schema v13)
   groupConfig: string | null; // JSON GroupConfig, groups only (schema v13)
   createdAt: number;
@@ -104,6 +110,16 @@ export interface Sticker {
   label: string; // what the model reads and emits
   desc: string; // verbal description injected into the prompt
   image: string; // data: URI
+  createdAt: number;
+}
+
+// 照片 (schema v17): one of a persona's 3 frozen reference-image slots.
+export interface RefImage {
+  id: string; // deterministic `${personaId}:${slot}`
+  personaId: string;
+  slot: number;
+  uri: string; // local file uri — never a fal URL directly persisted
+  prompt: string; // the composeRefPrompts() text that generated it
   createdAt: number;
 }
 

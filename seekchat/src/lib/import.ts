@@ -49,5 +49,11 @@ export function restoreBackup(payload: Record<string, unknown>): void {
     }
     const avatar = payload.userAvatar;
     if (typeof avatar === 'string' && avatar) setPref('userAvatar', avatar);
+    // 照片 (v2.6): a backup never carries ref_images rows or files (see
+    // export.ts) — a persona restored still frozen would be a dead end
+    // (locked appearance, empty gallery, no way back). Unfreeze everyone so
+    // 形象设定 can regenerate. Runs into the CURRENT schema (migrate() already
+    // ran), so the column always exists — no guard needed.
+    db.runSync('UPDATE personas SET refsFrozen=0');
   });
 }

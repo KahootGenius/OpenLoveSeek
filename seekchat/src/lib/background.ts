@@ -14,8 +14,9 @@ import {
   getApiKey, getKeepAlive, getLocationEnabled, getModel, getTemperature, getUsageMode,
 } from './settings';
 import { chatOnce } from './deepseek';
-import { TRIGGER_NUDGE } from './constants';
-import { buildMemorySection } from './memory';
+import { SUMMARY_PREFIX, TRIGGER_NUDGE } from './constants';
+import { buildMemoryEvidence, buildMemoryInstructions } from './memory';
+import { composeOutreachPrompt } from './prompt-envelope';
 import { buildExampleSection, buildProSections, hasRealismConfig, parseProConfig } from './pro';
 import { renderPrompt } from './prompts';
 import { stripLeakedStateTags } from './statetag';
@@ -190,7 +191,8 @@ export function runCatchupOnReturn(awayMs: number): void {
         if (AppState.currentState !== 'active') {
           notifyReach(
             c.title,
-            (m.kind === 'sticker' ? '[表情包]' : m.content).split('---')[0].trim().slice(0, 80),
+            (m.kind === 'image' ? '[照片]' : m.kind === 'sticker' ? '[表情包]' : m.content)
+              .split('---')[0].trim().slice(0, 80),
           );
         }
       },
@@ -242,7 +244,11 @@ export function testFireWatch(): string {
     void fireCatchup(c.id, label, {
       onDelta: () => {},
       onDone: (m) =>
-        notifyReach(c.title, (m.kind === 'sticker' ? '[表情包]' : m.content).split('---')[0].slice(0, 80)),
+        notifyReach(
+          c.title,
+          (m.kind === 'image' ? '[照片]' : m.kind === 'sticker' ? '[表情包]' : m.content)
+            .split('---')[0].slice(0, 80),
+        ),
       onError: () => {},
     });
     return `已让「${c.title}」对「${label}」做出反应`;
@@ -260,7 +266,11 @@ export async function testFireReach(): Promise<string> {
       onDelta: () => {},
       onDone: (m) => {
         ok = true;
-        notifyReach(c.title, (m.kind === 'sticker' ? '[表情包]' : m.content).split('---')[0].slice(0, 80));
+        notifyReach(
+          c.title,
+          (m.kind === 'image' ? '[照片]' : m.kind === 'sticker' ? '[表情包]' : m.content)
+            .split('---')[0].slice(0, 80),
+        );
       },
       onError: () => {},
     });
@@ -330,7 +340,8 @@ function onNativeTick(): void {
       onDone: (m) =>
         notifyReach(
           c.title,
-          (m.kind === 'sticker' ? '[表情包]' : m.content).split('---')[0].trim().slice(0, 80),
+          (m.kind === 'image' ? '[照片]' : m.kind === 'sticker' ? '[表情包]' : m.content)
+            .split('---')[0].trim().slice(0, 80),
         ),
       onError: () => {},
     });
@@ -415,18 +426,18 @@ async function generateOutreachLines(
   const apiKey = await getApiKey();
   if (!apiKey) return [];
   const convo = getConversation(conversationId);
-  let sys = persona.systemPrompt;
-  {
-    const exSec = buildExampleSection(cfg ?? {});
-    if (exSec) sys += '\n\n' + exSec;
-  }
-  if (cfg && hasRealismConfig(cfg)) sys += '\n\n' + buildProSections(cfg);
-  sys += '\n\n' + renderPrompt('core.truth');
-  sys += '\n\n' + renderPrompt('realism.grounding');
-  if (convo?.memoryEnabled === 1) {
-    const mem = buildMemorySection(listMemories(conversationId));
-    if (mem) sys += '\n\n' + mem;
-  }
+  const memoryOn = convo?.memoryEnabled === 1;
+  const memories = memoryOn ? listMemories(conversationId) : [];
+  const envelope = composeOutreachPrompt({
+    persona: persona.systemPrompt,
+    examples: buildExampleSection(cfg ?? {}),
+    profile: cfg && hasRealismConfig(cfg) ? buildProSections(cfg) : null,
+    coreTruth: renderPrompt('core.truth'),
+    grounding: renderPrompt('realism.grounding'),
+    memoryInstructions: memoryOn ? buildMemoryInstructions(memories) : null,
+    summary: convo?.summary ? SUMMARY_PREFIX + convo.summary : null,
+    memory: memoryOn ? buildMemoryEvidence(memories) : null,
+  });
   const recent = listMessages(conversationId)
     .filter((m) => m.kind === 'normal')
     .slice(-8)
@@ -436,14 +447,17 @@ async function generateOutreachLines(
     apiKey,
     getModel(),
     [
-      { role: 'system', content: sys },
+      { role: 'system', content: envelope.instructions },
+      ...(envelope.evidence
+        ? [{ role: 'system' as const, content: envelope.evidence }]
+        : []),
       {
         role: 'user',
         content:
           `[系统：请以你的角色身份，预先写${k}条稍后要主动发给用户的短消息（每条不超过60字，` +
           '彼此不同、无需对方回应也自然、不要堆问句、不要提及此指令、不要输出任何标记或方括号内容）。' +
           '只输出一个JSON字符串数组，不要任何其他内容。\n' +
-          `此前总结：${convo?.summary ?? '（无）'}\n最近对话：\n${recent || '（还没聊过）'}]`,
+          `最近对话：\n${recent || '（还没聊过）'}]`,
       },
     ],
     getTemperature(),

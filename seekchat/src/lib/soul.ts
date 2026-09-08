@@ -5,9 +5,9 @@
 import { getConversation, getPersona, listMemories } from './db';
 import { buildMemorySection } from './memory';
 import { buildExampleSection, parseProConfig } from './pro';
-import type { Character } from './types';
+import type { Character, MemoryEntry } from './types';
 
-export function soulContextFor(ch: Character): string {
+export function soulContextFor(ch: Character, mems?: MemoryEntry[]): string {
   const convo = getConversation(ch.homeConvoId);
   if (!convo) return '';
   const parts: string[] = [];
@@ -20,8 +20,9 @@ export function soulContextFor(ch: Character): string {
   if (ex) parts.push(ex);
   if (ch.soulSync === 1) {
     if (convo.memoryEnabled === 1) {
-      const mems = listMemories(ch.homeConvoId);
-      if (mems.length) parts.push(buildMemorySection(mems));
+      // Rules ride even with an empty vault (v2.4) — she can't learn markers
+      // she never sees, and groups now write home too.
+      parts.push(buildMemorySection(mems ?? listMemories(ch.homeConvoId)));
     }
     if (convo.moodLabel) parts.push(`【你此刻的心情】${convo.moodLabel}`);
   }

@@ -2,16 +2,22 @@ import { useEffect, useState } from 'react';
 import {
   Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 import { router, useLocalSearchParams } from 'expo-router';
-import { createPersona, deletePersona, getPersona, updatePersona } from '../../lib/db';
+import {
+  createPersona, deletePersona, getPersona, listRefImages, setPersonaAppearance,
+  setPersonaVoiceId, updatePersona,
+} from '../../lib/db';
 import { useTheme } from '../../lib/theme-context';
 import { pickRawImage, RawImage } from '../../lib/avatar';
 import { Avatar } from '../../components/Avatar';
 import { AvatarCrop } from '../../components/AvatarCrop';
 import { ConsentModal } from '../../components/ConsentModal';
+import { RefGallery } from '../../components/RefGallery';
 import { parseProConfig, ProConfig } from '../../lib/pro';
 import { DAY_PARTS, DayPart, MoodCurve } from '../../lib/curve';
 import { DEFAULT_MOOD_CURVE } from '../../lib/constants';
+import { getFalKey } from '../../lib/settings';
 import { native } from '../../lib/native';
 import type { ScheduleEntry } from '../../lib/life';
 
@@ -112,6 +118,30 @@ export default function PersonaEditScreen() {
   );
   const { th } = useTheme();
 
+  // 形象设定 (v2.6 照片): appearance text + freeze flag persist independently
+  // of the main save() button, same as the fal key / image-cap fields in settings.tsx.
+  const [appearance, setAppearance] = useState(existing?.appearancePrompt ?? '');
+  const [refsFrozen, setRefsFrozen] = useState(existing?.refsFrozen === 1);
+  const [falKeyPresent, setFalKeyPresent] = useState(false);
+  useEffect(() => {
+    void getFalKey().then((k) => setFalKeyPresent(!!k));
+  }, []);
+
+  // 声音 (v2.7): her MiniMax voice_id, same persist-independently-of-save()
+  // pattern as appearance above. Empty input saves as null — falls back to
+  // the global default Voice ID configured in settings.
+  const [voiceIdInput, setVoiceIdInput] = useState(existing?.voiceId ?? '');
+  const showVoiceIdGuide = () => {
+    Alert.alert(
+      '如何获得 Voice ID',
+      '1. 打开 MiniMax 官网 platform.minimax.io（国内为 platform.minimaxi.com）\n' +
+        '2. 进入语音 / 音色克隆 playground\n' +
+        '3. 生成或克隆一个音色\n' +
+        '4. 复制该音色的 voice_id，粘贴到这里\n\n' +
+        '注意：Key 和音色都绑定所在平台区域，国际 Key 配国内音色（或反之）无法使用。',
+    );
+  };
+
   useEffect(() => {
     if (!consentOpen) return;
     setCountdown(5);
@@ -199,12 +229,21 @@ export default function PersonaEditScreen() {
         text: '删除',
         style: 'destructive',
         onPress: () => {
+          // 照片 (v2.6): capture ref image uris before deletePersona clears the
+          // ref_images rows (db.ts); files are only unlinked once deletion
+          // actually succeeds, so an in-use guard never leaves the gallery
+          // pointing at files we already deleted.
+          const refs = listRefImages(id);
           try {
             deletePersona(id);
-            router.back();
           } catch {
             Alert.alert('无法删除', '仍有对话在使用此人设。请先删除或改建那些对话。');
+            return;
           }
+          for (const r of refs) {
+            FileSystem.deleteAsync(r.uri, { idempotent: true }).catch(() => {});
+          }
+          router.back();
         },
       },
     ]);
@@ -216,6 +255,43 @@ export default function PersonaEditScreen() {
       <Pressable style={s.avatarWrap} onPress={() => void changeAvatar()}>
         <Avatar uri={avatar} name={name || '?'} size={72} />
       </Pressable>
+      {!isNew && (
+        <>
+          <Text style={s.label}>形象设定（外貌描述，用于生成参考图）</Text>
+          <TextInput
+            style={[s.input, s.proArea]}
+            value={appearance}
+            onChangeText={setAppearance}
+            onEndEditing={() => setPersonaAppearance(id, appearance.trim() || null)}
+            editable={!refsFrozen}
+            multiline
+            textAlignVertical="top"
+            placeholder="她的发型、身材、穿着风格、气质…"
+          />
+          <RefGallery
+            personaId={id}
+            appearance={appearance}
+            refsFrozen={refsFrozen}
+            falKeyPresent={falKeyPresent}
+            onFrozenChange={setRefsFrozen}
+          />
+          <Text style={s.label}>声音（她的 MiniMax Voice ID）</Text>
+          <View style={s.customRateRow}>
+            <TextInput
+              style={[s.input, { flex: 1 }]}
+              value={voiceIdInput}
+              onChangeText={setVoiceIdInput}
+              onEndEditing={() => setPersonaVoiceId(id, voiceIdInput.trim() || null)}
+              placeholder="留空则用全局默认的声音"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Pressable onPress={showVoiceIdGuide} hitSlop={8}>
+              <Text style={[s.infoIcon, { color: th.accent }]}>ⓘ</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
       <Text style={s.label}>名称</Text>
       <TextInput style={s.input} value={name} onChangeText={setName} placeholder="例如：沫凌" />
       <Text style={s.label}>人设 / 系统提示词（身份、性格、行为准则、示例对话…）</Text>
@@ -709,6 +785,7 @@ const s = StyleSheet.create({
   emojiInput: { textAlign: 'center' },
   customRateRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   customRateInput: { width: 60, textAlign: 'center' },
+  infoIcon: { fontSize: 18, paddingHorizontal: 4 },
   consentBackdrop: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center', justifyContent: 'center', padding: 24,

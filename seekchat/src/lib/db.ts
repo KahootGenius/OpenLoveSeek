@@ -1,13 +1,13 @@
 import * as SQLite from 'expo-sqlite';
 import * as Crypto from 'expo-crypto';
 import type {
-  Character, Conversation, MemoryEntry, Message, MessageKind, MessageStatus, Persona, Post,
-  Reaction, Role, Sticker,
+  Character, Conversation, GroupRole, MemoryEntry, Message, MessageKind, MessageStatus, Persona,
+  Post, Reaction, RefImage, Role, Sticker,
 } from './types';
 import { NEW_CHAT_TITLE, SEED_PERSONA } from './constants';
 import { bindPromptStore } from './prompts';
 import { bindApiCounter } from './deepseek';
-import { isDeletableMessageKind } from './message-deletion';
+import { isDeletableMessageKind, mustClearSummaryOnDeletion } from './message-deletion';
 
 export const db = SQLite.openDatabaseSync('seekchat.db');
 const uuid = () => Crypto.randomUUID();
@@ -270,6 +270,66 @@ export function migrate(): void {
     db.execSync('PRAGMA user_version = 14');
     v = 14;
   }
+  if (v < 15) {
+    try {
+      db.execSync('ALTER TABLE conversations ADD COLUMN avatarUri TEXT');
+    } catch {
+      // column already exists from an interrupted earlier run
+    }
+    db.execSync('PRAGMA user_version = 15');
+    v = 15;
+  }
+  if (v < 16) {
+    // v2.5 group hierarchy: per-membership role + mute state.
+    const alters = [
+      "ALTER TABLE group_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'",
+      'ALTER TABLE group_members ADD COLUMN mutedUntil INTEGER',
+    ];
+    for (const a of alters) {
+      try {
+        db.execSync(a);
+      } catch {
+        // column already exists from an interrupted earlier run
+      }
+    }
+    db.execSync('PRAGMA user_version = 16');
+    v = 16;
+  }
+  if (v < 17) {
+    // v2.6 照片: frozen reference images give each persona a consistent look;
+    // appearancePrompt is her look in words, refsFrozen locks the 3 ref_images
+    // slots once generated (清空重来 is the only way back).
+    const alters = [
+      'ALTER TABLE personas ADD COLUMN appearancePrompt TEXT',
+      'ALTER TABLE personas ADD COLUMN refsFrozen INTEGER NOT NULL DEFAULT 0',
+    ];
+    for (const a of alters) {
+      try {
+        db.execSync(a);
+      } catch {
+        // column already exists from an interrupted earlier run
+      }
+    }
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS ref_images (
+        id TEXT PRIMARY KEY, personaId TEXT NOT NULL, slot INTEGER NOT NULL,
+        uri TEXT NOT NULL, prompt TEXT NOT NULL, createdAt INTEGER NOT NULL
+      );
+    `);
+    db.execSync('PRAGMA user_version = 17');
+    v = 17;
+  }
+  if (v < 18) {
+    // v2.7 语音: her assigned MiniMax voice_id; empty/null falls back to the
+    // settings-level default (getVoiceId()).
+    try {
+      db.execSync('ALTER TABLE personas ADD COLUMN voiceId TEXT');
+    } catch {
+      // column already exists from an interrupted earlier run
+    }
+    db.execSync('PRAGMA user_version = 18');
+    v = 18;
+  }
   const tables = db.getAllSync<{ name: string }>(
     "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
   );
@@ -292,7 +352,8 @@ export function createPersona(
 ): Persona {
   const t = now();
   const p: Persona = {
-    id: uuid(), name, systemPrompt, summaryPrompt, avatarUri, proConfig, createdAt: t, updatedAt: t,
+    id: uuid(), name, systemPrompt, summaryPrompt, avatarUri, proConfig,
+    appearancePrompt: null, refsFrozen: 0, voiceId: null, createdAt: t, updatedAt: t,
   };
   db.runSync(
     'INSERT INTO personas (id, name, systemPrompt, summaryPrompt, avatarUri, proConfig, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)',
@@ -325,9 +386,41 @@ export function personaInUse(id: string): boolean {
 
 export function deletePersona(id: string): void {
   if (personaInUse(id)) throw new Error('persona-in-use');
+  clearRefImages(id); // 照片 (v2.6): drop ref_images rows too — caller best-effort-deletes the files first
   db.runSync('DELETE FROM characters WHERE personaId = ?', [id]);
   db.runSync('DELETE FROM personas WHERE id = ?', [id]);
 }
+
+// 照片 (schema v17): her look in words, and the freeze gate on ref_images.
+export const setPersonaAppearance = (id: string, prompt: string | null): void =>
+  void db.runSync('UPDATE personas SET appearancePrompt=? WHERE id=?', [prompt, id]);
+
+export const setPersonaRefsFrozen = (id: string, frozen: number): void =>
+  void db.runSync('UPDATE personas SET refsFrozen=? WHERE id=?', [frozen, id]);
+
+// 语音 (schema v18): her assigned MiniMax voice_id; null falls back to the
+// global default (settings.ts's getVoiceId()).
+export const setPersonaVoiceId = (id: string, voiceId: string | null): void =>
+  void db.runSync('UPDATE personas SET voiceId=? WHERE id=?', [voiceId, id]);
+
+// ---- ref_images (v2.6 照片 — 3 frozen slots per persona) ----
+export const listRefImages = (personaId: string): RefImage[] =>
+  db.getAllSync<RefImage>(
+    'SELECT * FROM ref_images WHERE personaId = ? ORDER BY slot ASC',
+    [personaId],
+  );
+
+/** Deterministic id keyed by slot — regenerating a slot replaces its row. */
+export const upsertRefImage = (
+  personaId: string, slot: number, uri: string, prompt: string,
+): void =>
+  void db.runSync(
+    'INSERT OR REPLACE INTO ref_images (id, personaId, slot, uri, prompt, createdAt) VALUES (?,?,?,?,?,?)',
+    [`${personaId}:${slot}`, personaId, slot, uri, prompt, now()],
+  );
+
+export const clearRefImages = (personaId: string): void =>
+  void db.runSync('DELETE FROM ref_images WHERE personaId = ?', [personaId]);
 
 // ---- characters (v2.0 registry — see spec §4) ----
 export const getCharacterByPersona = (personaId: string): Character | null =>
@@ -490,7 +583,7 @@ export function createConversation(personaId: string): Conversation {
     summary: null, summaryUpToId: null,
     lifeEnabled: 0, memoryEnabled: 1, moodLabel: null, moodIntensity: null,
     moodUpdatedAt: null, currentThought: null, curveDrift: null, discipline: null,
-    masterHonorific: null, masterRules: null, charBalance: null,
+    masterHonorific: null, masterRules: null, charBalance: null, avatarUri: null,
     kind: 'dm', groupConfig: null,
     createdAt: t, updatedAt: t,
   };
@@ -521,7 +614,7 @@ export function carryOverConversation(oldId: string): Conversation | null {
     moodUpdatedAt: old.moodUpdatedAt, currentThought: old.currentThought,
     curveDrift: old.curveDrift, discipline: old.discipline,
     masterHonorific: old.masterHonorific, masterRules: old.masterRules,
-    charBalance: old.charBalance, kind: 'dm', groupConfig: null,
+    charBalance: old.charBalance, avatarUri: old.avatarUri, kind: 'dm', groupConfig: null,
     createdAt: t, updatedAt: t,
   };
   db.withTransactionSync(() => {
@@ -547,11 +640,13 @@ export function carryOverConversation(oldId: string): Conversation | null {
     // The last few exchanges set the live context — carry them so the new
     // chapter opens mid-conversation, not cold. Rows, not replies: 消息切割
     // splits one reply into several rows, so 12 rows ≈ the last few exchanges.
+    // v2.8: rowid tiebreak (not id — a random uuid) — same fix as listMessages,
+    // direction-matched (DESC, since this reads newest-first before .reverse()).
     const tail = db
       .getAllSync<Message>(
         `SELECT * FROM messages WHERE conversationId = ?
            AND kind NOT IN ('meta','experience') AND status = 'complete'
-         ORDER BY createdAt DESC, id DESC LIMIT ?`,
+         ORDER BY createdAt DESC, rowid DESC LIMIT ?`,
         [oldId, CARRY_TAIL_ROWS],
       )
       .reverse();
@@ -590,7 +685,7 @@ export function createGroupConversation(title: string, characterIds: string[]): 
     summary: null, summaryUpToId: null,
     lifeEnabled: 0, memoryEnabled: 0, moodLabel: null, moodIntensity: null,
     moodUpdatedAt: null, currentThought: null, curveDrift: null, discipline: null,
-    masterHonorific: null, masterRules: null, charBalance: null,
+    masterHonorific: null, masterRules: null, charBalance: null, avatarUri: null,
     kind: 'group', groupConfig: null,
     createdAt: t, updatedAt: t,
   };
@@ -609,9 +704,12 @@ export function createGroupConversation(title: string, characterIds: string[]): 
   return c;
 }
 
-export const listGroupMembers = (conversationId: string): Character[] =>
-  db.getAllSync<Character>(
-    `SELECT ch.* FROM group_members gm JOIN characters ch ON ch.id = gm.characterId
+// v2.5 group hierarchy: a member row scoped with her role + mute state.
+export type GroupMember = Character & { role: GroupRole; mutedUntil: number | null };
+
+export const listGroupMembers = (conversationId: string): GroupMember[] =>
+  db.getAllSync<GroupMember>(
+    `SELECT ch.*, gm.role, gm.mutedUntil FROM group_members gm JOIN characters ch ON ch.id = gm.characterId
      WHERE gm.conversationId = ? ORDER BY ch.createdAt ASC`,
     [conversationId],
   );
@@ -628,14 +726,42 @@ export const removeGroupMember = (conversationId: string, characterId: string): 
     [conversationId, characterId],
   );
 
+export const setGroupMemberRole = (
+  conversationId: string, characterId: string, role: GroupRole,
+): void =>
+  void db.runSync(
+    'UPDATE group_members SET role=? WHERE conversationId=? AND characterId=?',
+    [role, conversationId, characterId],
+  );
+
+export const setGroupMemberMute = (
+  conversationId: string, characterId: string, mutedUntil: number | null,
+): void =>
+  void db.runSync(
+    'UPDATE group_members SET mutedUntil=? WHERE conversationId=? AND characterId=?',
+    [mutedUntil, conversationId, characterId],
+  );
+
 export const setGroupConfig = (id: string, json: string): void =>
   void db.runSync('UPDATE conversations SET groupConfig = ? WHERE id = ?', [json, id]);
+
+/** v2.5 撤回: the original text is gone on purpose — only the display line rides. */
+export const recallGroupMessage = (
+  conversationId: string, messageId: string, displayLine: string,
+): void =>
+  void db.runSync(
+    "UPDATE messages SET kind='recall', content=?, quotedId=NULL WHERE id=? AND conversationId=?",
+    [displayLine, messageId, conversationId],
+  );
 
 export const getConversation = (id: string): Conversation | null =>
   db.getFirstSync<Conversation>('SELECT * FROM conversations WHERE id = ?', [id]) ?? null;
 
 export const renameConversation = (id: string, title: string): void =>
   void db.runSync('UPDATE conversations SET title=?, updatedAt=? WHERE id=?', [title, now(), id]);
+
+export const setConversationAvatar = (id: string, uri: string | null): void =>
+  void db.runSync('UPDATE conversations SET avatarUri=? WHERE id=?', [uri, id]);
 
 export function deleteConversation(id: string): void {
   db.withTransactionSync(() => {
@@ -668,9 +794,12 @@ export const clearSummary = (id: string): void =>
   void db.runSync('UPDATE conversations SET summary=NULL, summaryUpToId=NULL WHERE id=?', [id]);
 
 // ---- messages ----
+// v2.8: tiebreak on rowid (SQLite insertion order), not id — id is a random
+// uuid, so a createdAt tie (burst chunks stamped in the same millisecond)
+// used to shuffle nondeterministically. rowid always matches insert order.
 export const listMessages = (conversationId: string): Message[] =>
   db.getAllSync<Message>(
-    'SELECT * FROM messages WHERE conversationId = ? ORDER BY createdAt ASC, id ASC',
+    'SELECT * FROM messages WHERE conversationId = ? ORDER BY createdAt ASC, rowid ASC',
     [conversationId],
   );
 
@@ -688,6 +817,22 @@ export function deleteMessageAndResetContext(
       [messageId, conversationId],
     );
     if (!target || !isDeletableMessageKind(target.kind)) return;
+    const summaryUpToId = db.getFirstSync<Pick<Conversation, 'summaryUpToId'>>(
+      'SELECT summaryUpToId FROM conversations WHERE id=?',
+      [conversationId],
+    )?.summaryUpToId ?? null;
+    let clearSummary = true;
+    if (summaryUpToId) {
+      // rowid tiebreak — MUST match listMessages' ordering, or the boundary
+      // position computed here diverges from what the user actually sees.
+      const orderedIds = db
+        .getAllSync<{ id: string }>(
+          'SELECT id FROM messages WHERE conversationId=? ORDER BY createdAt ASC, rowid ASC',
+          [conversationId],
+        )
+        .map((r) => r.id);
+      clearSummary = mustClearSummaryOnDeletion(orderedIds, messageId, summaryUpToId);
+    }
     db.runSync(
       'UPDATE messages SET quotedId=NULL WHERE conversationId=? AND quotedId=?',
       [conversationId, messageId],
@@ -697,7 +842,9 @@ export function deleteMessageAndResetContext(
       [messageId, conversationId],
     );
     db.runSync(
-      'UPDATE conversations SET summary=NULL, summaryUpToId=NULL, currentThought=NULL, updatedAt=? WHERE id=?',
+      clearSummary
+        ? 'UPDATE conversations SET summary=NULL, summaryUpToId=NULL, currentThought=NULL, updatedAt=? WHERE id=?'
+        : 'UPDATE conversations SET currentThought=NULL, updatedAt=? WHERE id=?',
       [now(), conversationId],
     );
     deleted = true;
@@ -770,6 +917,13 @@ export const setCharBalance = (id: string, balance: number): void =>
 
 export const updateMessageContent = (id: string, content: string): void =>
   void db.runSync('UPDATE messages SET content=? WHERE id=?', [content, id]);
+
+// 照片 (v2.6): rows an app kill left stuck 'pending' — swept to 'failed' once
+// at launch (see sweepStalePendingImages in engine.ts).
+export const listStalePendingImages = (): { id: string; content: string }[] =>
+  db.getAllSync<{ id: string; content: string }>(
+    "SELECT id, content FROM messages WHERE kind='image' AND content LIKE '%\"status\":\"pending\"%'",
+  );
 
 // ---- memories (记忆库) ----
 export const listMemories = (conversationId: string): MemoryEntry[] =>

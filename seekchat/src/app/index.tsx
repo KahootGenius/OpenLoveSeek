@@ -11,6 +11,7 @@ import { parseProConfig } from '../lib/pro';
 import { subscribeMessages } from '../lib/engine';
 import { useTheme } from '../lib/theme-context';
 import { Avatar } from '../components/Avatar';
+import { MessageActionMenu, MenuAnchor } from '../components/MessageActionMenu';
 import type { Persona } from '../lib/types';
 
 export default function ConversationsScreen() {
@@ -18,6 +19,11 @@ export default function ConversationsScreen() {
   const [picker, setPicker] = useState<Persona[] | null>(null);
   const [renaming, setRenaming] = useState<ConversationListItem | null>(null);
   const [renameText, setRenameText] = useState('');
+  // MessageActionMenu (v2.8 T4 Alert audit finding): this row's long-press
+  // sheet was a 4-button Alert.alert for any non-group item (重命名/开启新篇章
+  // /删除/取消) — past Android's 3-button cap, same class of bug as the chat
+  // screens' message sheets, just undiscovered until this task's sweep.
+  const [actionMenu, setActionMenu] = useState<{ item: ConversationListItem; anchor: MenuAnchor } | null>(null);
   const { th } = useTheme();
 
   useFocusEffect(useCallback(() => setItems(listConversations()), []));
@@ -82,23 +88,28 @@ export default function ConversationsScreen() {
     );
   };
 
-  const onLongPress = (item: ConversationListItem) => {
-    Alert.alert(item.title, undefined, [
-      {
-        text: '重命名',
-        onPress: () => { setRenameText(item.title); setRenaming(item); },
-      },
-      ...(item.kind !== 'group'
-        ? [{ text: '开启新篇章（带记忆搬家）', onPress: () => startNewChapter(item) }]
-        : []),
-      {
-        text: '删除',
-        style: 'destructive',
-        onPress: () => confirmDelete(item),
-      },
-      { text: '取消', style: 'cancel' as const },
-    ]);
+  const onLongPress = (item: ConversationListItem, anchor: MenuAnchor) => {
+    setActionMenu({ item, anchor });
   };
+
+  const handleMenuAction = (key: string) => {
+    const item = actionMenu?.item;
+    setActionMenu(null);
+    if (!item) return;
+    if (key === 'rename') { setRenameText(item.title); setRenaming(item); }
+    else if (key === 'chapter') startNewChapter(item);
+    else if (key === 'delete') confirmDelete(item);
+  };
+
+  const menuActions = actionMenu
+    ? [
+        { key: 'rename', label: '重命名' },
+        ...(actionMenu.item.kind !== 'group'
+          ? [{ key: 'chapter', label: '开启新篇章（带记忆搬家）' }]
+          : []),
+        { key: 'delete', label: '删除', destructive: true },
+      ]
+    : [];
 
   return (
     <View style={s.root}>
@@ -112,10 +123,12 @@ export default function ConversationsScreen() {
             onPress={() =>
               router.push(item.kind === 'group' ? `/group/${item.id}` : `/chat/${item.id}`)
             }
-            onLongPress={() => onLongPress(item)}
+            onLongPress={(e) =>
+              onLongPress(item, { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY, width: 0, height: 0 })
+            }
           >
             <Avatar
-              uri={item.personaAvatar}
+              uri={item.kind === 'group' ? item.avatarUri : item.personaAvatar}
               name={item.kind === 'group' ? '群' : item.personaName}
               size={44}
             />
@@ -192,6 +205,13 @@ export default function ConversationsScreen() {
           </View>
         </Pressable>
       </Modal>
+      <MessageActionMenu
+        visible={actionMenu !== null}
+        anchor={actionMenu?.anchor ?? null}
+        actions={menuActions}
+        onAction={handleMenuAction}
+        onClose={() => setActionMenu(null)}
+      />
     </View>
   );
 }

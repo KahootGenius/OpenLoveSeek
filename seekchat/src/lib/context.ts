@@ -13,6 +13,15 @@ export function estimateTokens(text: string): number {
   return Math.ceil(0.35 * latin + 0.7 * cjk);
 }
 
+// 上下文长度 (v2.8): user-facing tiers for the per-turn history budget —
+// 短/长 are derived from HISTORY_BUDGET so they track it if it ever moves;
+// 中 IS HISTORY_BUDGET, not a duplicate, so there's one source of truth.
+export const WINDOW_TIERS = {
+  短: Math.round(HISTORY_BUDGET / 2),
+  中: HISTORY_BUDGET,
+  长: HISTORY_BUDGET * 2,
+} as const;
+
 export function selectWindow(
   messages: Message[],
   budget: number = HISTORY_BUDGET,

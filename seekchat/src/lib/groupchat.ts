@@ -2,16 +2,24 @@
 // only SUGGESTS; every cap and filter is enforced HERE in tested code.
 import type { Message } from './types';
 import { renderPrompt } from './prompts';
+import { parseRedpacket } from './redpacket';
 
+export interface GroupStamp { text: string; by: string; at: number }
 export interface GroupConfig {
   chainCap: number; // char→char lines since the user's last message
   maxSpeakers: number; // per director pick
   dailyCap: number; // automated lines (idle ticks + catch-up) per day
   background: boolean; // may the group move without the user?
+  owner: string; // 'user' or a characterId — single owner
+  modConsent: boolean; // characters may moderate the USER
+  announcement: GroupStamp | null;
+  notepad: GroupStamp | null;
+  userMutedUntil: number | null;
 }
 
 export const GROUP_DEFAULTS: GroupConfig = {
   chainCap: 3, maxSpeakers: 2, dailyCap: 30, background: false,
+  owner: 'user', modConsent: false, announcement: null, notepad: null, userMutedUntil: null,
 };
 
 export const CATCHUP_MIN_AWAY_MS = 30 * 60_000;
@@ -22,44 +30,72 @@ export function parseGroupConfig(json: string | null): GroupConfig {
   if (!json) return { ...GROUP_DEFAULTS };
   try {
     const o = JSON.parse(json) as Partial<GroupConfig>;
+    const stamp = (x: unknown): GroupStamp | null => {
+      const s = x as GroupStamp;
+      return s && typeof s.text === 'string' && s.text.trim()
+        && typeof s.by === 'string' && typeof s.at === 'number'
+        ? { text: s.text, by: s.by, at: s.at } : null;
+    };
     return {
-      chainCap: typeof o.chainCap === 'number' ? o.chainCap : GROUP_DEFAULTS.chainCap,
+      chainCap: typeof o.chainCap === 'number' ? Math.max(1, o.chainCap) : GROUP_DEFAULTS.chainCap,
       maxSpeakers: typeof o.maxSpeakers === 'number' ? o.maxSpeakers : GROUP_DEFAULTS.maxSpeakers,
       dailyCap: typeof o.dailyCap === 'number' ? o.dailyCap : GROUP_DEFAULTS.dailyCap,
       background: o.background === true,
+      owner: typeof o.owner === 'string' && o.owner ? o.owner : GROUP_DEFAULTS.owner,
+      modConsent: o.modConsent === true,
+      announcement: stamp(o.announcement),
+      notepad: stamp(o.notepad),
+      userMutedUntil: typeof o.userMutedUntil === 'number' ? o.userMutedUntil : null,
     };
   } catch {
     return { ...GROUP_DEFAULTS };
   }
 }
 
-/** Assistant lines since the user's last message — the chain the cap bounds. */
+/** Real character speech since the user's last message — the chain the cap
+ *  bounds. v2.5 system lines (meta) and recalled rows don't consume it. */
 export function chainCount(messages: Message[]): number {
   let n = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === 'user') break;
-    if (messages[i].role === 'assistant') n++;
+    if (messages[i].role === 'assistant' && (messages[i].kind === 'normal' || messages[i].kind === 'sticker')) n++;
   }
   return n;
 }
 
 export function parseGroupDirector(
-  raw: string, knownIds: string[], maxSpeakers: number,
+  raw: string, roster: { id: string; name: string }[], maxSpeakers: number,
 ): string[] {
   const m = /\{[\s\S]*\}/.exec(raw);
   if (!m) return [];
   try {
     const o = JSON.parse(m[0]) as { next?: unknown };
     if (!Array.isArray(o.next)) return [];
+    const ids = new Set(roster.map((r) => r.id));
+    const byName = new Map(roster.filter((r) => r.name).map((r) => [r.name, r.id]));
     return [...new Set(
-      o.next.filter((x): x is string => typeof x === 'string' && knownIds.includes(x)),
+      o.next
+        .filter((x): x is string => typeof x === 'string')
+        .map((x) => (ids.has(x) ? x : byName.get(x)))
+        .filter((x): x is string => typeof x === 'string'),
     )].slice(0, maxSpeakers);
   } catch {
     return [];
   }
 }
 
-/** "名字：内容" lines for the model; stickers by label; meta/experience skipped. */
+/** Pure. Reply-guarantee fallback: the @-mentioned member first, else random. */
+export function pickFallbackSpeaker<T extends { id: string }>(
+  members: T[], mentionedIds: string[], rand: () => number = Math.random,
+): T | null {
+  if (members.length === 0) return null;
+  return members.find((m) => mentionedIds.includes(m.id))
+    ?? members[Math.floor(rand() * members.length)];
+}
+
+/** "名字：内容" lines for the model; stickers by label; recall/meta ride as
+ *  "系统：…" lines (v2.5 — she should see mutes/recalls happen); experience
+ *  rows (her home-chat diary carry-over) stay skipped. */
 export function renderTranscript(
   messages: Message[],
   nameOf: (speakerId: string | null) => string,
@@ -67,15 +103,35 @@ export function renderTranscript(
   cap = 20,
 ): string {
   return messages
-    .filter((m) => m.kind === 'normal' || m.kind === 'sticker')
+    .filter((m) => ['normal', 'sticker', 'recall', 'meta', 'redpacket'].includes(m.kind))
     .slice(-cap)
     .map((m) => {
+      if (m.kind === 'recall' || m.kind === 'meta') return `系统：${m.content}`;
       const who = nameOf(m.role === 'user' ? null : m.speakerId);
+      if (m.kind === 'redpacket') {
+        const packet = parseRedpacket(m.content);
+        const body = packet ? `[发了一个红包${packet.note ? '：' + packet.note : ''}]` : '[红包]';
+        return `${who}：${body}`;
+      }
       const body =
         m.kind === 'sticker' ? `[表情：${stickerLabel(m.content) ?? '表情'}]` : m.content;
       return `${who}：${body}`;
     })
     .join('\n');
+}
+
+/** Pure. Standing group context (公告/笔记/总结) ahead of the transcript. */
+export function buildGroupContext(
+  transcript: string,
+  cfg: Pick<GroupConfig, 'announcement' | 'notepad'>,
+  summary: string | null,
+): string {
+  const parts: string[] = [];
+  if (cfg.announcement) parts.push(`【群公告】${cfg.announcement.text}`);
+  if (cfg.notepad) parts.push(`【群笔记】${cfg.notepad.text}`);
+  if (summary) parts.push(`【此前群聊总结】${summary}`);
+  parts.push(transcript);
+  return parts.join('\n\n');
 }
 
 /** Carried to her HOME chat (kind='experience') — first person (v2.1 lesson:
@@ -114,6 +170,12 @@ export function planCatchup(
   return fractions;
 }
 
+/** Pure. A speaker's own '---' burst becomes real message rows (v2.4);
+ *  segments trim, empties drop, a dash-only body yields nothing to land. */
+export function splitSpeakerBurst(body: string): string[] {
+  return body.split('---').map((p) => p.trim()).filter(Boolean);
+}
+
 export function buildGroupDirectorPrompt(
   members: { id: string; name: string }[], transcript: string,
   remainingChain: number, maxSpeakers: number,
@@ -128,7 +190,7 @@ export function buildGroupDirectorPrompt(
 
 export function buildSpeakerPrompt(args: {
   personaPrompt: string; soulContext: string; selfName: string;
-  groupName: string; memberNames: string; transcript: string;
+  groupName: string; memberNames: string; transcript: string; modPowers: string;
 }): string {
   return (
     `${args.personaPrompt}\n\n${args.soulContext}\n\n` +
@@ -137,6 +199,7 @@ export function buildSpeakerPrompt(args: {
       groupName: args.groupName,
       memberNames: args.memberNames,
       transcript: args.transcript,
-    })
+    }) +
+    (args.modPowers ? '\n\n' + args.modPowers : '')
   );
 }

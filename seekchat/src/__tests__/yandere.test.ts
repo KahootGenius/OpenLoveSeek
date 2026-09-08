@@ -51,4 +51,10 @@ describe('buildYanderePromptSection', () => {
     expect(out).toContain('[病娇:锁屏]');
     expect(out).toContain('低频');
   });
+
+  it('warns that narrating 锁屏 does nothing — the real marker must fire (field report)', () => {
+    const out = buildYanderePromptSection();
+    expect(out).toContain('不会真的锁屏');
+    expect(out).toContain('[病娇:锁屏]');
+  });
 });

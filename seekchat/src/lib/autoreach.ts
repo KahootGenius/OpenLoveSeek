@@ -23,7 +23,7 @@ export async function runAutoReachSweep(
     const fired = await fireTrigger(c.id, 'auto', {
       onDelta: () => {},
       onDone: (m) => {
-        replyText = m.kind === 'sticker' ? '[表情包]' : m.content;
+        replyText = m.kind === 'image' ? '[照片]' : m.kind === 'sticker' ? '[表情包]' : m.content;
       },
       onError: () => {},
     });

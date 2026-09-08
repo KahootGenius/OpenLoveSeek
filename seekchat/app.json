@@ -45,7 +45,8 @@
       "expo-background-task",
       "expo-notifications",
       "expo-image-picker",
-      "expo-local-authentication"
+      "expo-local-authentication",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,

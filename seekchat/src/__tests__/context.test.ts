@@ -1,7 +1,9 @@
 import {
   buildRequestMessages, countUnsummarized, estimateTokens, selectWindow, shouldSummarize,
+  WINDOW_TIERS,
 } from '../lib/context';
 import { composeDmPrompt } from '../lib/prompt-envelope';
+import { HISTORY_BUDGET } from '../lib/constants';
 import type { Message } from '../lib/types';
 
 let seq = 0;
@@ -52,6 +54,15 @@ describe('selectWindow', () => {
   it('preserves chronological order', () => {
     const msgs = [msg('one'), msg('two'), msg('three')];
     expect(selectWindow(msgs, 12000).map((m) => m.content)).toEqual(['one', 'two', 'three']);
+  });
+});
+
+describe('WINDOW_TIERS', () => {
+  it('pins 短/中/长 to half, current, and double the base budget', () => {
+    expect(WINDOW_TIERS).toEqual({ 短: 6000, 中: 12000, 长: 24000 });
+  });
+  it('中 is HISTORY_BUDGET itself — single source of truth', () => {
+    expect(WINDOW_TIERS.中).toBe(HISTORY_BUDGET);
   });
 });
 

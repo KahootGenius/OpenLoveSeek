@@ -1,8 +1,10 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import {
-  deleteMemory, getCharacterByPersona, getConversation, getMessage, getPersona, insertMemory,
-  insertMessage, listCharacters, listChatReadablePosts, listMemories, listMessages,
-  listStickers, setCharBalance, setConversationState, setCurveDrift, setDiscipline,
-  setMasterHonorific, setMasterRules, setSummary, touchConversation, updateMessageContent,
+  deleteMemory, getCharacterByPersona, getConversation, getMessage, getPersona, getPref,
+  insertMemory, insertMessage, listCharacters, listChatReadablePosts, listMemories, listMessages,
+  listRefImages, listStalePendingImages, listStickers, setCharBalance, setConversationState,
+  setCurveDrift, setDiscipline, setMasterHonorific, setMasterRules, setPref, setSummary,
+  touchConversation, updateMessageContent,
 } from './db';
 import { buildDiaryInstructions, buildDiarySection } from './moments';
 import {
@@ -15,6 +17,13 @@ import {
 } from './memory';
 import { routeTagExtras } from './extras';
 import { buildStickerPromptSection, extractStickerMarkers, resolveSticker } from './stickers';
+import {
+  buildFalInput, FAL_LITE_EDIT, FAL_LITE_T2I, FalError, falGenerate, userMessageForFal,
+} from './fal';
+import {
+  canGenerateToday, composeSceneOnlyPrompt, composeScenePrompt, extractImageMarker,
+  failStalePending, imageDayKey, imageModelText, imagePlaceholder, PhotoShot,
+} from './imagegen';
 import { buildYanderePromptSection, extractYandereMarkers } from './yandere';
 import {
   appendRule, buildMasterPromptSection, clampDiscipline, DISCIPLINE_START, extractMasterMarkers,
@@ -22,18 +31,21 @@ import {
 } from './master';
 import { applyGrowth, buildCurveLine, dayPartAt, parseDrift } from './curve';
 import {
-  getApiKey, getDevMode, getLocationEnabled, getManualPlace, getMergeHoldSec,
-  getMergeReplies, getModel, getMsgCut, getTemperature, getTempMode,
-  getThinkingEnabled, getUsageMode, getUserBalance, getUserNickname, setUserBalance,
+  getApiKey, getDevMode, getFalKey, getHistoryBudget, getImageDailyCap, getImageFeature,
+  getLocationEnabled, getManualPlace, getMergeHoldSec, getMergeReplies, getModel, getMsgCut,
+  getTemperature, getTempMode, getThinkingEnabled, getUsageMode, getUserBalance, getUserNickname,
+  setUserBalance,
 } from './settings';
 import {
   buildTempClassifierPrompt, currentUserBurst, parseTempChoice, TEMP_BY_CHOICE,
 } from './temp';
 import { renderPrompt } from './prompts';
 import { composeDmPrompt, type DmPromptParts } from './prompt-envelope';
-import { acceptRepair, buildRepairPrompt, lintMarkers, normalizeActionMarkers } from './repair';
+import {
+  acceptRepair, buildRepairPrompt, lintMarkers, narrationSuspects, normalizeActionMarkers,
+} from './repair';
 import { buildCutPrompt, needsCut, parseCut } from './cutter';
-import { detectTic } from './tic';
+import { detectTic, pickVarietyNudge, recentAssistantTurnBodies } from './tic';
 import { holdDelay } from './hold';
 import { catchupTriggerText, watchTriggerText } from './watch';
 import { buildPlaceLine, deviceTimeZone } from './geo';
@@ -426,13 +438,20 @@ async function runTurnInner(
 
   const cfg = parseProConfig(persona.proConfig);
   const realism = convo.lifeEnabled === 1 || hasRealismConfig(cfg);
+
+  // 照片 (v2.6): teach the marker only when a generation could actually fire —
+  // frozen refs + the global switch + a usable fal key (sticker-pattern
+  // gating: never teach what can't work). One await here, alongside apiKey
+  // above, rather than re-fetching later — the reply-side gate below reuses it.
+  const photosOn = getImageFeature() && persona.refsFrozen === 1;
+  const falKey = photosOn ? await getFalKey() : null;
   // meta rows are for the user's eyes only (dev-mode transparency) — they must
   // never reach the model or count as a turn. Experience rows stamped in the
   // FUTURE (staggered 朋友圈 reveals) stay hidden until their moment arrives.
   const all = listMessages(conversationId).filter(
     (m) => m.kind !== 'meta' && !(m.kind === 'experience' && m.createdAt > Date.now()),
   );
-  const window = selectWindow(all);
+  const window = selectWindow(all, getHistoryBudget());
   const nowD = new Date();
 
   const promptParts: DmPromptParts = {
@@ -509,13 +528,24 @@ async function runTurnInner(
 
   // 复读检测 (v2.3): when 3+ of her recent replies open with the same phrase,
   // one nudge line rides along. Deterministic, self-clearing.
-  const ticPhrase = detectTic(
-    all
-      .filter((m) => m.role === 'assistant' && m.kind === 'normal')
-      .slice(-8)
-      .map((m) => stripLeakedStateTags(m.content)),
-  );
-  if (ticPhrase) promptParts.tic = renderPrompt('tic.nudge', { phrase: ticPhrase });
+  // Turn-level bodies: the cutter stores one reply as several rows — rejoin
+  // them so 变化检测 measures what she actually authored, not storage shape.
+  const recentBodies = recentAssistantTurnBodies(all)
+    .slice(-8)
+    .map((s) => stripLeakedStateTags(s));
+  const ticPhrase = detectTic(recentBodies);
+  if (ticPhrase) {
+    promptParts.tic = renderPrompt('tic.nudge', { phrase: ticPhrase });
+  } else {
+    // 变化检测 (v2.4): one corrective line max — 复读 > 结构 > 长度.
+    const nudge = pickVarietyNudge(recentBodies);
+    if (nudge) {
+      promptParts.variety =
+        nudge.kind === 'structure'
+          ? renderPrompt('variety.structure', { pattern: nudge.pattern })
+          : renderPrompt('variety.length');
+    }
+  }
 
   // 聊天内可读 diary (v2.1): the user marked these readable — she can bring
   // them up in chat herself. Only in HER home chat, only posts she may see.
@@ -531,6 +561,9 @@ async function runTurnInner(
   const stickers = listStickers();
   if (stickers.length > 0) {
     promptParts.stickers = buildStickerPromptSection(stickers);
+  }
+  if (photosOn && falKey) {
+    promptParts.photos = renderPrompt('image.section', { cap: getImageDailyCap() });
   }
   const yandereOn = cfg?.yandere === true && cfg.yandereConsent === true;
   if (yandereOn) promptParts.yandere = buildYanderePromptSection();
@@ -563,17 +596,24 @@ async function runTurnInner(
     const q = m.quotedId ? byId.get(m.quotedId) : null;
     if (!q) return '';
     const who = q.role === 'user' ? '用户' : persona.name;
-    const txt = (q.kind === 'sticker' ? '[表情包]' : stripLeakedStateTags(q.content))
+    const txt = (
+      q.kind === 'image'
+        ? imagePlaceholder(q.content)
+        : q.kind === 'sticker'
+          ? '[表情包]'
+          : stripLeakedStateTags(q.content)
+    )
       .replace(/\s+/g, ' ')
       .slice(0, 40);
     return `（回复${who}的「${txt}」）`;
   };
   const windowMapped = window.map((m) => {
-    // Assistant sticker history is serialized in the SAME format she is told
-    // to emit — otherwise she mimics the transcript ("[发送了表情包:…]") and
-    // her sends stop parsing. Historical rows with a leaked 【状态|…】 (saved
-    // before the envelope parser) are scrubbed — feeding them back teaches
-    // the model the broken combined format.
+    // Assistant sticker AND photo history is serialized in the SAME format
+    // she is told to emit — otherwise she mimics the transcript's narrated
+    // form ("[发送了表情包:…]" / "（发送了一张照片：…）") and her sends stop
+    // parsing. Historical rows with a leaked 【状态|…】 (saved before the
+    // envelope parser) are scrubbed — feeding them back teaches the model
+    // the broken combined format.
     const transfer = m.kind === 'transfer' ? parseTransfer(m.content) : null;
     const base =
       m.kind === 'sticker'
@@ -584,9 +624,11 @@ async function runTurnInner(
           ? `[拍一拍:${m.content}]`
           : transfer
             ? transferModelText(m.role, transfer)
-            : m.role === 'assistant'
-              ? stripLeakedStateTags(m.content)
-              : m.content;
+            : m.kind === 'image'
+              ? imageModelText(m.content)
+              : m.role === 'assistant'
+                ? stripLeakedStateTags(m.content)
+                : m.content;
     // 引用: tell her exactly which message this one is answering.
     const content = m.quotedId ? `${quoteSnippet(m)}${base}` : base;
     return {
@@ -647,11 +689,23 @@ async function runTurnInner(
     // 格式检查 (v2.2): the free lint flags ATTEMPTED-but-broken markers; only
     // then does one small repair call run — format fixes only, original rides
     // on any doubt (acceptRepair). Extraction then sees functioning labels.
+    // 叙事救援 (field report): narrationSuspects flags committed mechanics
+    // narrated as prose with NO marker syntax at all (（给你拍了张照片）,
+    // a bare "锁屏" line) — same repair call rescues those into the marker
+    // the checker template now knows to write. Gated per-feature so an
+    // untaught feature's coincidental prose never triggers a rescue.
     let fullText = normalizeActionMarkers(full);
-    if (lintMarkers(fullText).suspects.length > 0) {
+    const narrationGate = { photo: photosOn && !!falKey, lock: yandereOn };
+    if (
+      lintMarkers(fullText).suspects.length > 0 ||
+      narrationSuspects(fullText, narrationGate).length > 0
+    ) {
       try {
         const fixed = await chatOnce(apiKey, SUMMARIZER_MODEL, [
-          { role: 'user', content: buildRepairPrompt(fullText) },
+          {
+            role: 'user',
+            content: buildRepairPrompt(fullText, { narration: narrationGate.photo || narrationGate.lock }),
+          },
         ], 0);
         if (acceptRepair(fullText, fixed) && fixed.trim() !== fullText.trim()) {
           fullText = fixed.trim();
@@ -688,12 +742,18 @@ async function runTurnInner(
         for (const t of toAdd) insertMemory(conversationId, t);
       }
     }
+    // 照片 (v2.6): only extracted when the marker was actually taught this
+    // turn — same DM philosophy as stickers below: an untaught marker is
+    // literal text she wrote, never a send.
+    const im = photosOn && falKey
+      ? extractImageMarker(afterMemory)
+      : { scene: null as string | null, shot: 'selfie' as PhotoShot, clean: afterMemory };
     // Without imported stickers she was never taught the marker — 【表情：冷漠】
     // is then a stage direction, not a send. Don't strip it.
     const { clean: afterStickers, labels } =
       stickers.length > 0
-        ? extractStickerMarkers(afterMemory)
-        : { clean: afterMemory, labels: [] as string[] };
+        ? extractStickerMarkers(im.clean)
+        : { clean: im.clean, labels: [] as string[] };
     const ya = yandereOn
       ? extractYandereMarkers(afterStickers)
       : { clean: afterStickers, vibrate: false, lock: false, hold: false, release: false, demand: null };
@@ -768,7 +828,7 @@ async function runTurnInner(
         const row = insertMessage(
           conversationId, 'assistant', c, 'complete', 'normal',
           i === 0 ? reasoningAcc.trim() || null : null,
-          i === 0 ? undefined : t0 + i, // strictly increasing stamps keep order
+          t0 + i, // strictly increasing stamps keep order — every chunk, including 0
         );
         saved = saved ?? row;
       });
@@ -789,13 +849,37 @@ async function runTurnInner(
       );
       saved = saved ?? row;
     }
+    // 照片 (v2.6): cap is checked BEFORE any row or fal call, and bumped ONLY
+    // when a generation actually fires. Over cap: the marker is already
+    // stripped above — she simply doesn't send one (the cap line she was
+    // taught makes her decline in character; DMs have no ungated system-line
+    // lane to post an extra notice on).
+    if (im.scene) {
+      const dayKey = imageDayKey(conversationId, new Date());
+      const used = parseInt(getPref(dayKey) ?? '0', 10) || 0;
+      if (canGenerateToday(used, getImageDailyCap())) {
+        const scene = im.scene;
+        const shot = im.shot;
+        setPref(dayKey, String(used + 1));
+        const row = insertMessage(
+          conversationId, 'assistant',
+          JSON.stringify({ status: 'pending', scene, shot }),
+          'complete', 'image',
+        );
+        saved = saved ?? row;
+        notifyMessage(conversationId); // the pending bubble appears immediately
+        void generatePhoto(
+          conversationId, row.id, persona.id, persona.appearancePrompt ?? '', scene, shot, falKey!,
+        );
+      }
+    }
     if (!saved) {
       // Never resurrect marker/tag text: a hidden-channel-only reply (memory
       // write, unresolvable sticker, state tag alone, yandere/master op)
       // already had its effect — show a beat instead of the raw channel.
       const hadOps =
         memoryOpsApplied || labels.length > 0 || tagFound || maOps ||
-        transferAmount != null || patAction != null ||
+        transferAmount != null || patAction != null || im.scene !== null ||
         ya.vibrate || ya.lock || ya.hold || ya.release || ya.demand !== null;
       saved = insertMessage(
         conversationId, 'assistant',
@@ -838,6 +922,7 @@ async function runTurnInner(
       // (Ops are NOT applied from partials; only completed turns write state.)
       let cleaned = stripEchoedTimestamps(cleanDraftForDisplay(draft)).trim();
       if (memoryOn) cleaned = extractMemoryMarkers(cleaned).clean;
+      if (photosOn && falKey) cleaned = extractImageMarker(cleaned).clean;
       if (stickers.length > 0) cleaned = extractStickerMarkers(cleaned).clean;
       if (yandereOn) cleaned = extractYandereMarkers(cleaned).clean;
       if (masterOn) cleaned = extractMasterMarkers(cleaned).clean;
@@ -855,6 +940,74 @@ async function runTurnInner(
   }
 }
 
+/**
+ * 照片 (v2.6): the actual Lite-edit call + local download, run fire-and-forget
+ * after the pending row is already visible. Every path is caught — a fal
+ * failure must never surface as a turn error, only flip the row to 'failed'
+ * with a reason (Task 5 renders a retry). EXPORTED so the retry button can
+ * re-fire the identical call.
+ *
+ * 实拍 (v2.8): `shot` picks the endpoint. 'selfie' is the original path,
+ * byte-identical — frozen refs read off disk, composeScenePrompt (appearance
+ * + scene), FAL_LITE_EDIT conditioned on refDataUris. 'scene' is scene-ONLY:
+ * no ref read, no appearance, composeSceneOnlyPrompt, plain FAL_LITE_T2I.
+ */
+export async function generatePhoto(
+  conversationId: string,
+  messageId: string,
+  personaId: string,
+  appearance: string,
+  scene: string,
+  shot: PhotoShot,
+  falKey: string,
+): Promise<void> {
+  try {
+    let urls: string[];
+    if (shot === 'scene') {
+      urls = await falGenerate(
+        falKey, FAL_LITE_T2I,
+        buildFalInput({ prompt: composeSceneOnlyPrompt(scene), size: 'auto_2K' }),
+      );
+    } else {
+      const refDataUris: string[] = [];
+      for (const ref of listRefImages(personaId)) {
+        const b64 = await FileSystem.readAsStringAsync(ref.uri, { encoding: 'base64' });
+        refDataUris.push(`data:image/jpeg;base64,${b64}`);
+      }
+      urls = await falGenerate(
+        falKey, FAL_LITE_EDIT,
+        buildFalInput({ prompt: composeScenePrompt(appearance, scene), size: 'auto_2K', refDataUris }),
+      );
+    }
+    if (!urls[0]) throw new FalError(0, '未返回图片');
+    const dir = `${FileSystem.documentDirectory}chatimg/`;
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+    const dest = `${dir}${messageId}.jpg`;
+    await FileSystem.downloadAsync(urls[0], dest);
+    updateMessageContent(messageId, JSON.stringify({ status: 'done', scene, shot, uri: dest }));
+  } catch (e) {
+    const reason = e instanceof FalError ? userMessageForFal(e.status) : '网络不稳定，稍后重试';
+    updateMessageContent(messageId, JSON.stringify({ status: 'failed', scene, shot, reason }));
+  } finally {
+    notifyMessage(conversationId);
+  }
+}
+
+/**
+ * 照片 (v2.6): a row can be orphaned mid-generation — the app killed between
+ * the 'pending' insert and generatePhoto's async fal call landing — and would
+ * otherwise sit as a permanent spinner forever. Run once at app launch (see
+ * _layout.tsx, right after migrate()), BEFORE any conversation renders, so a
+ * dead spinner is never shown; the row lands 'failed' with a retry-able reason
+ * (Task 5's retry button re-fires generatePhoto against it).
+ */
+export function sweepStalePendingImages(): void {
+  for (const row of listStalePendingImages()) {
+    const next = failStalePending(row.content);
+    if (next !== row.content) updateMessageContent(row.id, next);
+  }
+}
+
 export async function maybeSummarize(conversationId: string): Promise<void> {
   if (summarizing.has(conversationId)) return;
   const convo = getConversation(conversationId);
@@ -864,7 +1017,7 @@ export async function maybeSummarize(conversationId: string): Promise<void> {
   const all = listMessages(conversationId).filter(
     (m) => m.kind !== 'meta' && !(m.kind === 'experience' && m.createdAt > Date.now()),
   );
-  const window = selectWindow(all);
+  const window = selectWindow(all, getHistoryBudget());
   if (!shouldSummarize(all, window, convo.summaryUpToId)) return;
 
   summarizing.add(conversationId);
@@ -915,9 +1068,11 @@ export async function maybeSummarize(conversationId: string): Promise<void> {
               : `[发送了表情包：${stickerLabel.get(m.content) ?? '表情'}]`
             : transfer
               ? transferModelText(m.role, transfer)
-              : m.role === 'assistant'
-                ? stripLeakedStateTags(m.content)
-                : m.content;
+              : m.kind === 'image'
+                ? imagePlaceholder(m.content)
+                : m.role === 'assistant'
+                  ? stripLeakedStateTags(m.content)
+                  : m.content;
         return `${who}：${body}`;
       })
       .join('\n');

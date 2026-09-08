@@ -23,6 +23,7 @@ import {
 import { chatOnce } from './deepseek';
 import { getApiKey, getModel, getTemperature } from './settings';
 import { SUMMARIZER_MODEL } from './constants';
+import { extractMemoryMarkers } from './memory';
 import { extractStateTag } from './statetag';
 import { logMeta, notifyConversation } from './engine';
 
@@ -119,7 +120,9 @@ export async function publishPost(post: Post): Promise<void> {
           { role: 'user', content: '（写下你的评论）' },
         ], getTemperature());
         const { clean, tag } = extractStateTag(out);
-        const comment = clean.trim().slice(0, 300);
+        // 记忆 markers are taught via soulContext but moments never APPLY them —
+        // strip so they can't leak as visible text.
+        const comment = extractMemoryMarkers(clean).clean.trim().slice(0, 300);
         if (!comment) continue;
         // The reactor call takes seconds — re-check the post survived it.
         if (!getPost(post.id)) return;
@@ -178,7 +181,7 @@ export async function maybeCharPosts(): Promise<void> {
           },
           { role: 'user', content: '（写下你的动态）' },
         ], getTemperature());
-        const text = extractStateTag(out).clean.trim().slice(0, 200);
+        const text = extractMemoryMarkers(extractStateTag(out).clean).clean.trim().slice(0, 200);
         if (!text) continue;
         const post = insertCharPost(ch.id, text);
         carryHome(ch, `〔朋友圈〕我发了条动态：「${post.text.slice(0, 30)}」`, Date.now());
@@ -238,7 +241,7 @@ export async function charCommentReply(post: Post, userComment: string): Promise
       { role: 'user', content: '（写下你的回复）' },
     ], getTemperature());
     const { clean, tag } = extractStateTag(out);
-    const reply = clean.trim().slice(0, 300);
+    const reply = extractMemoryMarkers(clean).clean.trim().slice(0, 300);
     if (!reply || !getPost(post.id)) return;
     const revealAt = Date.now() + 60_000 + Math.floor(Math.random() * 9 * 60_000); // 1-10 min
     const r = insertReaction(post.id, ch.id, 'comment', reply, revealAt);
