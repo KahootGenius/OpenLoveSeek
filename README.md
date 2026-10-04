@@ -11,7 +11,7 @@
 
 LoveSeek is a phone-only app built with Expo and React Native in TypeScript. You bring your own model key (DeepSeek or GLM), and every conversation, memory and setting stays on the device. The app's interface and prompts are in Chinese. This README is in English, and Chinese appears only where it is the literal name of something in the app. Characters are female by default (the persona card also offers a boyfriend), so the text below says "she".
 
-> **Who built what.** [KahootGenius](https://github.com/KahootGenius) designed the app, tested it on a real phone build by build, and reported what broke. [Claude Code](https://claude.com/claude-code) wrote all of the code and did the code-level debugging. The details, including which Claude models were involved, are in [How it was built](#how-it-was-built).
+> **Who built what.** [KahootGenius](https://github.com/KahootGenius) designed the app, tested it on a real phone build by build, and reported what broke. [Claude Code](https://claude.com/claude-code) wrote the code and did the code-level debugging. The details, including which Claude models were involved, are in [How it was built](#how-it-was-built).
 
 ## Contents
 
@@ -166,7 +166,7 @@ LoveSeek is the work of one person and an AI coding agent, with a clear split of
 | | KahootGenius | Claude Code |
 |---|---|---|
 | **Role** | Design, testing, reporting | Coding, code-level debugging |
-| **In practice** | Conceived the app and its features, made the design calls, approved each spec before work began, tested the builds on a real Android phone, and reported what broke with the symptoms seen | Wrote all of the application code (TypeScript and the Kotlin module) and its 641 unit tests, traced field reports to their causes in the code and fixed them, ran review passes, and built the APKs. It also wrote up a design spec and an implementation plan for each wave from KahootGenius's direction |
+| **In practice** | Conceived the app and its features, made the design calls, approved each spec before work began, tested the builds on a real Android phone, and reported what broke with the symptoms seen | Wrote all of the application code (TypeScript and the Kotlin module) and its 641 unit tests, traced field reports to their causes in the code and fixed them, ran review passes, and built the APKs. It also wrote up a design spec and a specific implementation plan for each design-calls|
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/workflow-dark.svg">
@@ -181,8 +181,11 @@ LoveSeek is the work of one person and an AI coding agent, with a clear split of
 - Cutting long replies into message bursts with a separate tiny call, so the main prompt carries no extra duties.
 - Quick Start: a persona that grows her own personality by trying styles like a decision tree and reading the user's attitude, with acting and judging as separate calls.
 - GLM as a second chat provider the user can switch to freely.
-- Asking for conversations that feel more real and lively, then approving the seven-part v3.0 plan.
+- Asking for conversations that feel more real and lively, then engaged in brainstorming/discussing the seven-part v3.0 plan. (Claude as the technical side, evaluates the degree in which it can be implemented)
 - Scope and cost calls, such as photos before video, a daily photo cap, and that handing a group's ownership to a character is final.
+- Fixing the repeated-opening habit with a hard-coded rule instead of more prompt text, and tuning its thresholds by hand on the phone.
+- Pro-tier model for real work, Flash-tier model for monitoring/repetitive work (e.g., base image generation vs. other image generation based on it; real chat message vs. temperature decision, length decision, attitude decision)
+- ...etc.
 
 **Field reports that became fixes.** KahootGenius saw these on the phone, and Claude Code traced each one to its cause in the code.
 
