@@ -200,3 +200,45 @@ describe('universal truth vs realism guidance', () => {
     expect(realism).not.toContain('总结和模型写下的记忆');
   });
 });
+
+describe('v2.9 prompt hierarchy', () => {
+  it('registers 核心守则 first so it leads both the studio and the DM prompt', () => {
+    expect(PROMPTS[0].key).toBe('core.rules');
+    expect(listPromptGroups()[0].title).toBe('核心守则');
+    const core = renderPrompt('core.rules');
+    expect(core).toContain('优先级最高');
+    for (const step of ['先读气氛', '再定篇幅', '再定内容与态度', '最后核对事实']) {
+      expect(core).toContain(step);
+    }
+    expect(core).toContain('【这条回复的篇幅】');
+  });
+
+  it('ships one shared 标记通则 and three 篇幅 directives', () => {
+    const markers = renderPrompt('markers.rules');
+    expect(markers).toContain('独占一行');
+    expect(markers).toContain('绝不在正文提及');
+    expect(markers).toContain('低频');
+    for (const k of ['length.short', 'length.medium', 'length.long']) {
+      expect(renderPrompt(k)).toMatch(/^【这条回复的篇幅】/);
+    }
+    expect(renderPrompt('temp.classifier', { text: 'x' })).toContain('风格|篇幅');
+  });
+
+  it('feature blocks no longer repeat the shared marker sentences, but keep their field-observed negatives', () => {
+    const vars = {
+      example: 'x', max: 1, list: '', patTemplate: 'p', balance: '1', maxText: 1, maxAdds: 1, cap: 3,
+    };
+    const trimmed = [
+      'memory.section', 'transfer.section', 'yandere.section', 'realism.growth', 'realism.pat',
+      'realism.tag', 'stickers.section',
+    ];
+    for (const k of trimmed) {
+      expect(renderPrompt(k, vars)).not.toMatch(
+        /绝不解释这套机制|绝不在正文提及这套机制|绝不向用户提及这套机制|必须独占一行才会生效|别每条都发|绝不能塞进状态标签/,
+      );
+    }
+    expect(renderPrompt('image.section', vars)).toContain('不会真的发出照片');
+    expect(renderPrompt('yandere.section')).toContain('并不会真的锁屏');
+    expect(renderPrompt('realism.tag')).toContain('其他标记不得塞进标签');
+  });
+});

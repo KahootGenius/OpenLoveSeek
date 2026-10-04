@@ -1,15 +1,17 @@
 import {
-  buildTempClassifierPrompt, currentUserBurst, parseTempChoice, TEMP_BY_CHOICE,
+  buildTempClassifierPrompt, currentUserBurst, LENGTH_PROMPT_KEY, parseLengthChoice,
+  parseTempChoice, TEMP_BY_CHOICE,
 } from '../lib/temp';
 
 describe('buildTempClassifierPrompt', () => {
-  it('contains the message, all three registers, and the one-word instruction', () => {
+  it('contains the message, all three registers, the three tiers, and the two-word instruction', () => {
     const s = buildTempClassifierPrompt('我们聊聊我日记里写的那件事吧');
     expect(s).toContain('日记里写的那件事');
     expect(s).toContain('严谨');
     expect(s).toContain('平衡');
     expect(s).toContain('奔放');
-    expect(s).toContain('只输出一个词');
+    expect(s).toContain('只输出两个词');
+    for (const tier of ['短', '中', '长']) expect(s).toContain(`${tier}=`);
   });
 
   it('truncates very long messages', () => {
@@ -25,7 +27,7 @@ describe('buildTempClassifierPrompt', () => {
       '填'.repeat(700);
     const finalQuestion = '最后我问：日记里有没有写我去了巴黎？';
     const s = buildTempClassifierPrompt(`${firstFragment}\n${finalQuestion}`);
-    const excerpt = s.match(/消息：「([\s\S]*)」\n只输出一个词/)?.[1];
+    const excerpt = s.match(/消息：「([\s\S]*)」\n只输出两个词/)?.[1];
 
     expect(excerpt).toBeDefined();
     expect(excerpt).toContain('日记事实：我只写了下雨。');
@@ -49,6 +51,31 @@ describe('parseTempChoice', () => {
   it('garbage → null (caller falls back to the manual setting)', () => {
     expect(parseTempChoice('无法判断')).toBeNull();
     expect(parseTempChoice('')).toBeNull();
+  });
+});
+
+describe('parseLengthChoice', () => {
+  it('reads the 篇幅 half of a 风格|篇幅 verdict in any common separator', () => {
+    expect(parseLengthChoice('平衡|短')).toBe('短');
+    expect(parseLengthChoice(' 严谨 ｜ 长\n')).toBe('长');
+    expect(parseLengthChoice('奔放,中')).toBe('中');
+    expect(parseLengthChoice('风格：平衡 篇幅：短')).toBe('短');
+  });
+
+  it('tolerates a short chatty answer but refuses prose (单字 tiers would false-match)', () => {
+    expect(parseLengthChoice('平衡|短篇')).toBe('短');
+    expect(parseLengthChoice('这条消息中对方在认真倾诉自己的烦恼，我觉得值得展开成长文来回应。')).toBeNull();
+    expect(parseLengthChoice('平衡')).toBeNull();
+    expect(parseLengthChoice('')).toBeNull();
+  });
+
+  it('leaves parseTempChoice unaffected by the second word', () => {
+    expect(parseTempChoice('平衡|短')).toBe('平衡');
+    expect(parseTempChoice('严谨｜长')).toBe('严谨');
+  });
+
+  it('maps every tier to a registered prompt key', () => {
+    expect(LENGTH_PROMPT_KEY).toEqual({ 短: 'length.short', 中: 'length.medium', 长: 'length.long' });
   });
 });
 

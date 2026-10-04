@@ -11,6 +11,9 @@ import { extractStateTag } from './statetag';
 // Marker heads she is actually taught. 状态 is handled separately (envelope).
 // v2.5: 群管理 heads (grouproles.ts decides permission; this only spots breaks).
 // v2.8: owner-character agency adds 任命/罢免/移出/转让群主.
+// v2.9: 立即开始's 作息/兴趣 are everyday words — a colon after them in prose
+// is common, so they stay OUT of the lint and only get the wrong-bracket
+// normalizer below.
 const HEADS = [
   '拍一拍', '转账', '表情包', '表情', '病娇', '主人', '记忆', '记住', '忘记',
   '禁言', '解除禁言', '公告', '笔记+', '撤回', '任命', '罢免', '移出', '转让群主', '照片',
@@ -83,7 +86,8 @@ export function buildRepairPrompt(
 // '+' in 笔记+ is escaped — it is a literal character here, not a quantifier.
 // v2.8: 任命/罢免/移出/转让群主 (owner-character agency) are always value-bearing.
 const ACTION_HEADS =
-  '(?:拍一拍|转账|病娇|主人|记忆|记住|忘记|禁言|解除禁言|公告|笔记\\+|任命|罢免|移出|转让群主|照片)';
+  '(?:拍一拍|转账|病娇|主人|记忆|记住|忘记|禁言|解除禁言|公告|笔记\\+|任命|罢免|移出|转让群主|照片' +
+  '|作息|兴趣)';
 const ALT_ACTION_RE = new RegExp(
   `^[ \\t]*[\\[【（(](${ACTION_HEADS}[:：][^\\n\\]】）)]+?)[\\]】）)][ \\t]*$`,
   'gm',

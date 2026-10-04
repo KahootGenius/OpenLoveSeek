@@ -18,6 +18,8 @@ export interface ScheduledMsg {
   fireAt: number;
   notifId: string;
   generatedAt: number;
+  /** v3.0: 'reply' = a deferred reply (busy/asleep), folded without a trigger row; default outreach. */
+  kind?: 'outreach' | 'reply';
 }
 
 export const OUTREACH_HORIZON_MS = 12 * 3600000; // plan at most this far ahead

@@ -5,7 +5,8 @@ import {
   Alert, PermissionsAndroid, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
 import {
-  getApiKey, setApiKey, getModel, setModel, getDeliveryMode, setDeliveryMode,
+  getProviderKey, setProviderKey, getProvider, setProvider, getGlmRegion, setGlmRegion,
+  getModel, setModel, getDeliveryMode, setDeliveryMode,
   getDevMode, setDevMode, getFalKey, setFalKey,
   getHistoryBudget, setHistoryBudget,
   getImageDailyCap, setImageDailyCap,
@@ -24,7 +25,10 @@ import {
   getVoiceFeature, setVoiceFeature, getVoiceId, setVoiceId,
   getVoiceReadParens, setVoiceReadParens, getVoiceRegion, setVoiceRegion,
   getVoiceSpeed, setVoiceSpeed,
+  getPerceptionEnabled, setPerceptionEnabled, getRhythmEnabled, setRhythmEnabled,
+  getTextureEnabled, setTextureEnabled, getUserBirthday, setUserBirthday,
 } from '../lib/settings';
+import { normalizeBirthday } from '../lib/calendar';
 import { BIG_BALANCE, fmtMoney, LOVE_REMINDER } from '../lib/transfer';
 import { native } from '../lib/native';
 import type { UsageMode } from '../lib/usage';
@@ -97,7 +101,7 @@ async function importBackupFlow(): Promise<void> {
   }
 }
 import { isExpoGo } from '../lib/env';
-import { getPref, setPref } from '../lib/db';
+import { apiCallsToday, getPref, setPref } from '../lib/db';
 
 // Loaded lazily — evaluating expo-notifications inside Expo Go throws.
 const bg = () =>
@@ -105,13 +109,14 @@ const bg = () =>
   require('../lib/background') as typeof import('../lib/background');
 import { Avatar } from '../components/Avatar';
 import { ConsentModal } from '../components/ConsentModal';
-import { ApiError, chatOnce, userMessageFor } from '../lib/deepseek';
-import { DEFAULT_MODEL } from '../lib/constants';
+import { ApiError, chatOnce, userMessageFor } from '../lib/llm';
+import { PROVIDER_ORDER, PROVIDERS } from '../lib/providers';
+import type { GlmRegion } from '../lib/providers';
 import { WINDOW_TIERS } from '../lib/context';
 import { useTheme } from '../lib/theme-context';
 import { normalizeHex } from '../lib/color';
 import { ColorPalette } from '../components/ColorPalette';
-import type { DeliveryMode, ModelId } from '../lib/types';
+import type { DeliveryMode, ModelId, Provider } from '../lib/types';
 import type { VoiceRegion } from '../lib/settings';
 
 function Choice<T extends string>(props: {
@@ -171,6 +176,13 @@ function Section(props: {
 export default function SettingsScreen() {
   const [keyInput, setKeyInput] = useState('');
   const [savedTail, setSavedTail] = useState<string | null>(null);
+  // 模型服务商 (v2.9): DeepSeek/GLM each keep their own key slot, saved-tail,
+  // test result and remembered model; only the active one is called.
+  const [provider, setProviderState] = useState<Provider>(getProvider());
+  const [glmKeyInput, setGlmKeyInput] = useState('');
+  const [glmSavedTail, setGlmSavedTail] = useState<string | null>(null);
+  const [glmRegion, setGlmRegionState] = useState<GlmRegion>(getGlmRegion());
+  const [glmTestResult, setGlmTestResult] = useState<string | null>(null);
   const [falKeyInput, setFalKeyInput] = useState('');
   const [falSavedTail, setFalSavedTail] = useState<string | null>(null);
   const [imageFeatureOn, setImageFeatureOnState] = useState(getImageFeature());
@@ -221,6 +233,11 @@ export default function SettingsScreen() {
   // 上下文长度 (v2.8): numeric field mirrors getHistoryBudget/setHistoryBudget;
   // the tier chips below (WINDOW_TIERS) write through the same setter.
   const [historyBudgetInput, setHistoryBudgetInput] = useState(String(getHistoryBudget()));
+  // 真实感 (v3.0)
+  const [perceptionOn, setPerceptionOnState] = useState(getPerceptionEnabled());
+  const [rhythmOn, setRhythmOnState] = useState(getRhythmEnabled());
+  const [textureOn, setTextureOnState] = useState(getTextureEnabled());
+  const [birthdayInput, setBirthdayInput] = useState(getUserBirthday() ?? '');
   // Section open/closed (v2.8 settings overhaul): 聊天 defaults open (the
   // most frequently touched group), the rest default closed to minimize
   // scrolling for the common case.
@@ -349,7 +366,11 @@ export default function SettingsScreen() {
   };
 
   useEffect(() => {
-    void getApiKey().then((k) => setSavedTail(k ? k.slice(-4) : null));
+    void getProviderKey('deepseek').then((k) => setSavedTail(k ? k.slice(-4) : null));
+  }, []);
+
+  useEffect(() => {
+    void getProviderKey('glm').then((k) => setGlmSavedTail(k ? k.slice(-4) : null));
   }, []);
 
   useEffect(() => {
@@ -360,13 +381,19 @@ export default function SettingsScreen() {
     void getMiniMaxKey().then((k) => setMinimaxSavedTail(k ? k.slice(-4) : null));
   }, []);
 
-  const saveKey = async () => {
-    const k = keyInput.trim();
+  const saveKey = async (p: Provider) => {
+    const k = (p === 'glm' ? glmKeyInput : keyInput).trim();
     if (!k) return;
-    await setApiKey(k);
-    setSavedTail(k.slice(-4));
-    setKeyInput('');
-    setTestResult(null);
+    await setProviderKey(p, k);
+    if (p === 'glm') {
+      setGlmSavedTail(k.slice(-4));
+      setGlmKeyInput('');
+      setGlmTestResult(null);
+    } else {
+      setSavedTail(k.slice(-4));
+      setKeyInput('');
+      setTestResult(null);
+    }
   };
 
   const saveFalKey = async () => {
@@ -396,18 +423,21 @@ export default function SettingsScreen() {
     );
   };
 
-  const testKey = async () => {
-    setTestResult('测试中…');
-    const k = await getApiKey();
+  // Tests THAT provider's own key against its default model — works for the
+  // inactive provider too, so a second key can be checked before switching.
+  const testKey = async (p: Provider) => {
+    const report = p === 'glm' ? setGlmTestResult : setTestResult;
+    report('测试中…');
+    const k = await getProviderKey(p);
     if (!k) {
-      setTestResult('尚未保存 API Key');
+      report('尚未保存 API Key');
       return;
     }
     try {
-      await chatOnce(k, DEFAULT_MODEL, [{ role: 'user', content: '回复：OK' }]);
-      setTestResult('✓ 连接正常');
+      await chatOnce(k, PROVIDERS[p].defaultModel, [{ role: 'user', content: '回复：OK' }]);
+      report('✓ 连接正常');
     } catch (e) {
-      setTestResult(e instanceof ApiError ? userMessageFor(e) : String(e));
+      report(e instanceof ApiError ? userMessageFor(e) : String(e));
     }
   };
 
@@ -417,8 +447,26 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={s.root} contentContainerStyle={{ padding: 16 }}>
       <Section title="API Keys" open={apiKeysOpen} onToggle={() => setApiKeysOpen((v) => !v)}>
+        <Text style={s.subLabel}>模型服务商（聊天、群聊、朋友圈与后台主动消息都走这一家）</Text>
+        <Choice
+          accent={th.accent}
+          options={PROVIDER_ORDER.map((p) => ({ value: p, label: PROVIDERS[p].label }))}
+          value={provider}
+          onChange={(p: Provider) => {
+            setProvider(p);
+            setProviderState(p);
+            setModelState(getModel()); // each provider remembers its own model
+          }}
+        />
+        <Text style={s.stickerHint}>
+          DeepSeek：v4 模型，想象力可到 1.5，账单单一。GLM（智谱）：有免费档，5.3 系列更强但不能关思考
+          （关闭=低强度），工具调用走 4.7-flashx；想象力上限 1.0（奔放≈平衡），Key 绑定区域（国际 Z.ai / 国内 bigmodel.cn）。
+          两家各自保存 Key 与模型选择，随时切换。
+        </Text>
+
         <Text style={s.label}>
           DeepSeek API Key {savedTail ? `（已保存，尾号 ${savedTail}）` : '（未设置）'}
+          {provider === 'deepseek' ? ' · 使用中' : ''}
         </Text>
         <TextInput
           style={s.input}
@@ -430,14 +478,63 @@ export default function SettingsScreen() {
           autoCorrect={false}
         />
         <View style={s.btnRow}>
-          <Pressable style={[s.btn, { backgroundColor: th.accent }]} onPress={saveKey}>
+          <Pressable
+            style={[s.btn, { backgroundColor: th.accent }]}
+            onPress={() => void saveKey('deepseek')}
+          >
             <Text style={s.btnTxt}>保存</Text>
           </Pressable>
-          <Pressable style={[s.btn, { backgroundColor: th.accentSoft }]} onPress={testKey}>
+          <Pressable
+            style={[s.btn, { backgroundColor: th.accentSoft }]}
+            onPress={() => void testKey('deepseek')}
+          >
             <Text style={[s.btnTxt, { color: th.accent }]}>测试连接</Text>
           </Pressable>
         </View>
         {testResult && <Text style={s.test}>{testResult}</Text>}
+
+        <Text style={s.label}>
+          GLM API Key {glmSavedTail ? `（已保存，尾号 ${glmSavedTail}）` : '（未设置）'}
+          {provider === 'glm' ? ' · 使用中' : ''}
+        </Text>
+        <Text style={s.subLabel}>区域（Key 绑定签发平台：国际 z.ai，国内 open.bigmodel.cn）</Text>
+        <Choice
+          accent={th.accent}
+          options={[
+            { value: 'global', label: '国际' },
+            { value: 'cn', label: '国内' },
+          ]}
+          value={glmRegion}
+          onChange={(r: GlmRegion) => {
+            setGlmRegion(r);
+            setGlmRegionState(r);
+            setGlmTestResult(null);
+          }}
+        />
+        <TextInput
+          style={s.input}
+          value={glmKeyInput}
+          onChangeText={setGlmKeyInput}
+          placeholder={PROVIDERS.glm.keyPlaceholder}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <View style={s.btnRow}>
+          <Pressable
+            style={[s.btn, { backgroundColor: th.accent }]}
+            onPress={() => void saveKey('glm')}
+          >
+            <Text style={s.btnTxt}>保存</Text>
+          </Pressable>
+          <Pressable
+            style={[s.btn, { backgroundColor: th.accentSoft }]}
+            onPress={() => void testKey('glm')}
+          >
+            <Text style={[s.btnTxt, { color: th.accent }]}>测试连接</Text>
+          </Pressable>
+        </View>
+        {glmTestResult && <Text style={s.test}>{glmTestResult}</Text>}
 
         <Text style={s.label}>
           fal.ai Key {falSavedTail ? `（已保存，尾号 ${falSavedTail}）` : '（未设置）'}
@@ -502,13 +599,13 @@ export default function SettingsScreen() {
           />
         </View>
 
-        <Text style={s.label}>模型（deepseek-chat/reasoner 已于 2026-07 弃用）</Text>
+        <Text style={s.label}>
+          模型（{PROVIDERS[provider].label}
+          {provider === 'deepseek' ? '；flash 即 V4.1（2026-09-10 起），旧 v4-flash 已退役' : ''}）
+        </Text>
         <Choice
           accent={th.accent}
-          options={[
-            { value: 'deepseek-v4-flash', label: 'v4-flash（快，便宜）' },
-            { value: 'deepseek-v4-pro', label: 'v4-pro（更强）' },
-          ]}
+          options={PROVIDERS[provider].models}
           value={model}
           onChange={(m: ModelId) => {
             setModel(m);
@@ -517,7 +614,7 @@ export default function SettingsScreen() {
         />
 
         <Text style={s.label}>
-          想象力（低=更贴合事实，少编造；高=更有戏剧性；动态=每条消息自动判断，谈日记谈正事时严谨、玩闹时奔放）
+          想象力（低=更贴合事实，少编造；高=更有戏剧性；动态=每条消息自动判断语气与篇幅：谈正事时严谨、玩闹时奔放、闲聊时短回——需开启下方的每轮感知）
         </Text>
         <Choice
           accent={th.accent}
@@ -542,13 +639,63 @@ export default function SettingsScreen() {
           }}
         />
         <Text style={s.stickerHint}>
-          今日 API 调用 {(() => {
-            const d = new Date();
-            return getPref(
-              `api.${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`,
-            ) ?? '0';
-          })()} 次（每条消息≈1次；导演/评论/修复/分类/总结各计1次）
+          今日 API 调用 {apiCallsToday()} 次（DeepSeek {apiCallsToday('deepseek')} · GLM{' '}
+          {apiCallsToday('glm')}；每条消息≈1次；导演/评论/修复/分类/总结各计1次）
         </Text>
+
+        <Text style={s.label}>真实感</Text>
+        <View style={s.toggleRow}>
+          <Text style={s.toggleLabel}>
+            每轮感知（回复前读一眼：对方的情绪与需要的语气/篇幅、值得记住的事、几天后要跟进的事、亲密度；每轮多一次小调用）
+          </Text>
+          <Switch
+            value={perceptionOn}
+            onValueChange={(v) => {
+              setPerceptionEnabled(v);
+              setPerceptionOnState(v);
+            }}
+            trackColor={{ true: th.accent }}
+          />
+        </View>
+        <View style={s.toggleRow}>
+          <Text style={s.toggleLabel}>
+            作息感知（已读回执；她忙时先回一句再补完整回复、睡着时等醒来再回——需要人设有作息表）
+          </Text>
+          <Switch
+            value={rhythmOn}
+            onValueChange={(v) => {
+              setRhythmEnabled(v);
+              setRhythmOnState(v);
+            }}
+            trackColor={{ true: th.accent }}
+          />
+        </View>
+        <View style={s.toggleRow}>
+          <Text style={s.toggleLabel}>
+            小动作（偶尔打错字再纠正、撤回一句、引用你的话、发语音条、你没回时追问一句）
+          </Text>
+          <Switch
+            value={textureOn}
+            onValueChange={(v) => {
+              setTextureEnabled(v);
+              setTextureOnState(v);
+            }}
+            trackColor={{ true: th.accent }}
+          />
+        </View>
+        <Text style={s.subLabel}>你的生日（MM-DD；你聊到时她会自动记下，也可手填）</Text>
+        <TextInput
+          style={[s.input, s.holdInput]}
+          value={birthdayInput}
+          onChangeText={setBirthdayInput}
+          onEndEditing={() => {
+            const n = normalizeBirthday(birthdayInput);
+            setUserBirthday(n);
+            setBirthdayInput(n ?? '');
+          }}
+          placeholder="05-20"
+          autoCapitalize="none"
+        />
 
         <Text style={s.label}>上下文长度（每轮发给她的历史消息预算）</Text>
         <View style={s.holdRow}>
@@ -1064,10 +1211,10 @@ export default function SettingsScreen() {
         visible={usageConsentOpen}
         title="开启屏幕使用感知前请确认"
         body={
-          '开启后，应用会读取你今天各应用的使用时长与名称，并发送给 DeepSeek，' +
+          '开启后，应用会读取你今天各应用的使用时长与名称，并发送给你所选的模型服务商（DeepSeek 或 GLM），' +
           '让她能自然地提起你在用什么、用了多久。\n\n这意味着：你的应用使用信息会离开设备。随时可关闭。'
         }
-        tickLabel="我理解并接受我的应用使用信息会发送给 DeepSeek"
+        tickLabel="我理解并接受我的应用使用信息会发送给模型服务商"
         onCancel={() => setUsageConsentOpen(false)}
         onConfirm={() => {
           setUsageConsent(true);
@@ -1079,11 +1226,11 @@ export default function SettingsScreen() {
         visible={locConsentOpen}
         title="开启位置感知前请确认"
         body={
-          '开启后，应用会持续读取你的大致位置（城市级）与时区，并发送给 DeepSeek，' +
+          '开启后，应用会持续读取你的大致位置（城市级）与时区，并发送给你所选的模型服务商（DeepSeek 或 GLM），' +
           '让她知道你在哪、判断你的作息早晚。\n\n这意味着：你的位置信息会离开设备。' +
           '为省电，位置只在你打开应用或后台心跳时刷新，不会持续开启 GPS。随时可关闭。'
         }
-        tickLabel="我理解并接受我的大致位置会发送给 DeepSeek"
+        tickLabel="我理解并接受我的大致位置会发送给模型服务商"
         onCancel={() => setLocConsentOpen(false)}
         onConfirm={() => {
           setLocConsentOpen(false);
@@ -1096,8 +1243,8 @@ export default function SettingsScreen() {
         body={
           '开启后，即使你不在应用里，她也会主动给你发消息：应用会在你使用时提前准备好她想说的话，' +
           '由系统在她作息表中勾选「主动」的时段作为通知送达（应用被系统冻结也能送达）；你回到应用时这些消息会出现在聊天里。\n\n' +
-          '此开关还会启用系统定期唤醒与后台实时联系：条件满足时她可能在后台真实调用 DeepSeek 主动发消息。\n\n' +
-          '这意味着：准备与发送消息都会真实调用 DeepSeek API 并产生费用，即使你之后没有查看。'
+          '此开关还会启用系统定期唤醒与后台实时联系：条件满足时她可能在后台真实调用模型服务商（DeepSeek 或 GLM）主动发消息。\n\n' +
+          '这意味着：准备与发送消息都会真实调用模型服务商 API 并产生费用，即使你之后没有查看。'
         }
         tickLabel="我明白这会在我不使用应用时自动产生费用"
         onCancel={() => setBgConsentOpen(false)}
@@ -1143,7 +1290,7 @@ const s = StyleSheet.create({
   btnTxt: { color: '#fff', fontSize: 15 },
   test: { marginTop: 10, fontSize: 14, color: '#444' },
   stickerHint: { marginTop: 8, fontSize: 11, color: '#999', lineHeight: 15 },
-  choiceRow: { flexDirection: 'row', gap: 10 },
+  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   choice: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#f2f2f2' },
   choiceTxt: { fontSize: 14, color: '#444' },
   choiceTxtOn: { color: '#fff' },

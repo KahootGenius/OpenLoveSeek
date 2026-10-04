@@ -7,16 +7,19 @@ import {
   listMemories, listMessages, setPref, touchConversation,
 } from './db';
 import {
-  fireCatchup, fireWatch, isStreaming, notifyConversation, setTurnGuard,
+  bindDeferredReply, fireCatchup, fireWatch, isStreaming, notifyConversation, setTurnGuard,
 } from './engine';
 import { runAutoReachSweep } from './autoreach';
 import {
   getApiKey, getKeepAlive, getLocationEnabled, getModel, getTemperature, getUsageMode,
 } from './settings';
-import { chatOnce } from './deepseek';
+import { chatOnce } from './llm';
 import { SUMMARY_PREFIX, TRIGGER_NUDGE } from './constants';
 import { buildMemoryEvidence, buildMemoryInstructions } from './memory';
 import { composeOutreachPrompt } from './prompt-envelope';
+import { buildShapingIdentity, parseShaping } from './shaping';
+import { dayEventsLine, parseDayLog } from './dayseed';
+import { dueFollowUps } from './memory';
 import { buildExampleSection, buildProSections, hasRealismConfig, parseProConfig } from './pro';
 import { renderPrompt } from './prompts';
 import { stripLeakedStateTags } from './statetag';
@@ -402,11 +405,17 @@ export function ingestDueOutreach(): number {
     // A line the user has already outdated (chatted after it was written) would
     // read as her ignoring what was just said — the notification fired, but
     // don't fold a stale line into the chat.
-    if (isStaleSchedule(d.generatedAt, lastUserAt)) continue;
+    if (d.kind !== 'reply' && isStaleSchedule(d.generatedAt, lastUserAt)) continue;
     const lastAt = msgs.length ? msgs[msgs.length - 1].createdAt : 0;
     const at = Math.max(d.fireAt, lastAt + 1); // always the newest — never backdated behind history
-    insertMessage(d.conversationId, 'user', TRIGGER_NUDGE, 'complete', 'trigger', null, at);
-    insertMessage(d.conversationId, 'assistant', d.text, 'complete', 'normal', null, at + 1);
+    if (d.kind === 'reply') {
+      // 节奏 (v3.0): a deferred reply answers what the user already said — no
+      // trigger row, and never stale.
+      insertMessage(d.conversationId, 'assistant', d.text, 'complete', 'normal', null, at);
+    } else {
+      insertMessage(d.conversationId, 'user', TRIGGER_NUDGE, 'complete', 'trigger', null, at);
+      insertMessage(d.conversationId, 'assistant', d.text, 'complete', 'normal', null, at + 1);
+    }
     touchConversation(d.conversationId);
     notifyConversation(d.conversationId); // refresh an open chat
     folded++;
@@ -428,8 +437,11 @@ async function generateOutreachLines(
   const convo = getConversation(conversationId);
   const memoryOn = convo?.memoryEnabled === 1;
   const memories = memoryOn ? listMemories(conversationId) : [];
+  const shaping = parseShaping(persona.shaping);
   const envelope = composeOutreachPrompt({
+    coreRules: renderPrompt('core.rules'),
     persona: persona.systemPrompt,
+    identity: shaping ? buildShapingIdentity(shaping) : null,
     examples: buildExampleSection(cfg ?? {}),
     profile: cfg && hasRealismConfig(cfg) ? buildProSections(cfg) : null,
     coreTruth: renderPrompt('core.truth'),
@@ -454,6 +466,12 @@ async function generateOutreachLines(
       {
         role: 'user',
         content:
+          (dayEventsLine(parseDayLog(persona.dayLog), new Date())
+            ? `[${dayEventsLine(parseDayLog(persona.dayLog), new Date())}]\n`
+            : '') +
+          (memoryOn && dueFollowUps(memories, Date.now()).length
+            ? `[到了该问问的事：${dueFollowUps(memories, Date.now()).map((e) => e.text).join('；')}——其中一条可以问起]\n`
+            : '') +
           `[系统：请以你的角色身份，预先写${k}条稍后要主动发给用户的短消息（每条不超过60字，` +
           '彼此不同、无需对方回应也自然、不要堆问句、不要提及此指令、不要输出任何标记或方括号内容）。' +
           '只输出一个JSON字符串数组，不要任何其他内容。\n' +
@@ -517,10 +535,10 @@ export async function syncScheduledOutreach(force = false): Promise<void> {
       }
     }
     // Drop plans for conversations no longer eligible / deleted.
-    const orphans = readSched().filter((i) => !eligible.has(i.conversationId));
+    const orphans = readSched().filter((i) => i.kind !== 'reply' && !eligible.has(i.conversationId));
     if (orphans.length) {
       for (const i of orphans) await cancelNotif(i.notifId);
-      writeSched(readSched().filter((i) => eligible.has(i.conversationId)));
+      writeSched(readSched().filter((i) => i.kind === 'reply' || eligible.has(i.conversationId)));
     }
     for (const [cid, { persona, cfg }] of eligible) {
       if (aborted()) return; // opted out mid-sync — stop; don't pay for more convos
@@ -533,7 +551,7 @@ export async function syncScheduledOutreach(force = false): Promise<void> {
         const msgs = listMessages(cid);
         const lastUserAt =
           [...msgs].reverse().find((m) => m.role === 'user' && m.kind === 'normal')?.createdAt ?? 0;
-        const mine = readSched().filter((i) => i.conversationId === cid);
+        const mine = readSched().filter((i) => i.conversationId === cid && i.kind !== 'reply');
         const hasFreshFuture =
           mine.some((i) => i.fireAt > now) &&
           !isStaleSchedule(Math.min(...mine.map((i) => i.generatedAt)), lastUserAt);
@@ -570,7 +588,7 @@ export async function syncScheduledOutreach(force = false): Promise<void> {
           for (const f of fresh) await cancelNotif(f.notifId);
           return;
         }
-        writeSched([...readSched().filter((i) => i.conversationId !== cid), ...fresh]);
+        writeSched([...readSched().filter((i) => i.conversationId !== cid || i.kind === 'reply'), ...fresh]);
       } catch (e) {
         // A throw after some notifs were scheduled would orphan them (fire but
         // never fold, never cancellable) — undo them here.
@@ -585,6 +603,29 @@ export async function syncScheduledOutreach(force = false): Promise<void> {
     syncingOutreach = false;
   }
 }
+
+/** 节奏 (v3.0): hand a reply she wrote NOW to the OS for delivery at `fireAt`
+ *  (she is busy or asleep). Folded by ingestDueOutreach like outreach, minus
+ *  the trigger row. If the OS refuses the notification, the item is still
+ *  stored and folds on the next launch/resume. */
+export async function scheduleDeferredReply(args: {
+  conversationId: string; text: string; fireAt: number; title: string;
+}): Promise<void> {
+  let notifId = `local-${Date.now()}`;
+  try {
+    notifId = await Notifications.scheduleNotificationAsync({
+      content: { title: args.title, body: args.text.split('---')[0].trim().slice(0, 80) },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(args.fireAt) },
+    });
+  } catch {
+    // no permission / Expo Go — stored anyway; folds on resume
+  }
+  writeSched([
+    ...readSched(),
+    { conversationId: args.conversationId, text: args.text, fireAt: args.fireAt, notifId, generatedAt: Date.now(), kind: 'reply' },
+  ]);
+}
+bindDeferredReply(scheduleDeferredReply);
 
 /** Fold a notification that fired while the app is alive (foreground or the
  *  brief pre-freeze window) straight into history — no lost line, no backdate. */

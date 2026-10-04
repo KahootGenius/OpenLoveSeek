@@ -2,8 +2,10 @@ import * as FileSystem from 'expo-file-system/legacy';
 import {
   deleteMemory, getCharacterByPersona, getConversation, getMessage, getPersona, getPref,
   insertMemory, insertMessage, listCharacters, listChatReadablePosts, listMemories, listMessages,
-  listRefImages, listStalePendingImages, listStickers, setCharBalance, setConversationState,
-  setCurveDrift, setDiscipline, setMasterHonorific, setMasterRules, setPref, setSummary,
+  listRefImages, listStalePendingImages, listStickers, recallGroupMessage, renameConversation,
+  renamePersona, setCharBalance, setConversationAgenda, setConversationCloseness,
+  setConversationState, setCurveDrift, setDiscipline, setMasterHonorific, setMasterRules,
+  setPersonaDayLog, setPersonaProConfig, setPersonaShaping, setPref, setSummary,
   touchConversation, updateMessageContent,
 } from './db';
 import { buildDiaryInstructions, buildDiarySection } from './moments';
@@ -13,7 +15,8 @@ import {
 } from './transfer';
 import { extractPatMarker } from './markers';
 import {
-  applyMemoryOps, buildMemoryEvidence, buildMemoryInstructions, extractMemoryMarkers,
+  applyMemoryOps, buildMemoryEvidence, buildMemoryInstructions, dueFollowUps,
+  extractMemoryMarkers,
 } from './memory';
 import { routeTagExtras } from './extras';
 import { buildStickerPromptSection, extractStickerMarkers, resolveSticker } from './stickers';
@@ -32,13 +35,13 @@ import {
 import { applyGrowth, buildCurveLine, dayPartAt, parseDrift } from './curve';
 import {
   getApiKey, getDevMode, getFalKey, getHistoryBudget, getImageDailyCap, getImageFeature,
-  getLocationEnabled, getManualPlace, getMergeHoldSec, getMergeReplies, getModel, getMsgCut,
-  getTemperature, getTempMode, getThinkingEnabled, getUsageMode, getUserBalance, getUserNickname,
-  setUserBalance,
+  getLocationEnabled, getManualPlace, getMergeHoldSec, getMergeReplies, getMiniMaxKey, getModel,
+  getMsgCut, getPerceptionEnabled, getRhythmEnabled, getSummarizerModel, getTemperature,
+  getTempMode, getTextureEnabled, getThinkingEnabled, getUsageMode, getUserBalance,
+  getUserBirthday, getUserNickname, getVoiceFeature, getVoiceId, getVoiceReadParens,
+  getVoiceRegion, getVoiceSpeed, setUserBalance, setUserBirthday,
 } from './settings';
-import {
-  buildTempClassifierPrompt, currentUserBurst, parseTempChoice, TEMP_BY_CHOICE,
-} from './temp';
+import { currentUserBurst, LENGTH_PROMPT_KEY, TEMP_BY_CHOICE } from './temp';
 import { renderPrompt } from './prompts';
 import { composeDmPrompt, type DmPromptParts } from './prompt-envelope';
 import {
@@ -47,6 +50,26 @@ import {
 import { buildCutPrompt, needsCut, parseCut } from './cutter';
 import { detectTic, pickVarietyNudge, recentAssistantTurnBodies } from './tic';
 import { holdDelay } from './hold';
+import {
+  advanceTurn, applyJudgement, buildOpeningTrigger, buildShapingSection, extractLifeMarkers,
+  mergeLifeIntoConfig, parseShaping, type ShapingEvent,
+} from './shaping';
+import {
+  buildPerceptionPrompt, clampCloseness, CLOSENESS_START, closenessLine, followUpAtFor,
+  parsePerception, shouldPerceive, toJudgement,
+} from './perception';
+import {
+  availabilityAt, busyDirective, computeReadAt, decideRhythm, deferredDirective,
+} from './rhythm';
+import {
+  buildDayPrompt, dayEventsLine, dayKeyOf, needsDaySeed, parseDayEvents, parseDayLog,
+} from './dayseed';
+import { calendarLines, holidaysOn } from './calendar';
+import {
+  extractQuote, extractRecall, maybeTypo, recallTombstone, resolveQuoteTarget,
+} from './texture';
+import { makeOwnLineMarker } from './markers';
+import { moodToEmotion } from './voicetext';
 import { catchupTriggerText, watchTriggerText } from './watch';
 import { buildPlaceLine, deviceTimeZone } from './geo';
 import {
@@ -56,11 +79,8 @@ import {
   getLastUsageCheckAt, getLiveGeoFresh, getLiveUsage, markUsageChecked,
 } from './livestate';
 import { buildRequestMessages, selectWindow, shouldSummarize } from './context';
-import {
-  SUMMARIZER_MODEL, SUMMARY_PREFIX,
-  TRIGGER_CATCHUP, TRIGGER_NUDGE,
-} from './constants';
-import { ApiError, chatOnce, streamChat } from './deepseek';
+import { SUMMARY_PREFIX, TRIGGER_CATCHUP, TRIGGER_NUDGE, TRIGGER_SILENCE } from './constants';
+import { ApiError, chatOnce, streamChat } from './llm';
 import {
   activityAt, canFireTrigger, decayedMood, isAsleepAt, TriggerPath,
 } from './life';
@@ -207,6 +227,48 @@ export function isStreaming(conversationId: string): boolean {
   return controllers.has(conversationId);
 }
 
+// 节奏 (v3.0): deferred delivery lives in background.ts (expo-notifications,
+// which Expo Go cannot load) and is injected here like the API counter. When
+// nothing is bound, a deferred reply simply lands immediately.
+type DeferredReplyFn = (args: {
+  conversationId: string; text: string; fireAt: number; title: string;
+}) => Promise<void>;
+let deferredReply: DeferredReplyFn | null = null;
+export const bindDeferredReply = (fn: DeferredReplyFn): void => void (deferredReply = fn);
+
+// 语音 (v3.0): [语音:内容] own-line marker → a voice bubble.
+const VOICE_MARKER = makeOwnLineMarker('语音', 300);
+const ANY_OWN_LINE_MARKER = /^[ \t]*[\[【][^\]】\n]{1,80}[\]】][ \t]*$\n?/gm;
+
+/** A deferred reply carries no ops: strip the state tag and every own-line marker. */
+function cleanDeferredText(raw: string): string {
+  const { clean } = extractStateTag(normalizeActionMarkers(raw));
+  return stripEchoedTimestamps(clean).replace(ANY_OWN_LINE_MARKER, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Synthesize a voice row in the background; the bubble flips pending → done/failed. */
+async function synthesizeVoiceRow(
+  conversationId: string, rowId: string, text: string, personaVoiceId: string | null, moodLabel: string | null,
+): Promise<void> {
+  try {
+    const apiKey = await getMiniMaxKey();
+    const voiceId = personaVoiceId?.trim() || getVoiceId();
+    if (!apiKey || !voiceId) throw new Error('voice not configured');
+    // Lazy: expo-audio inside voice.ts cannot be evaluated in jest / Expo Go.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { synthesizeToCache } = require('./voice') as typeof import('./voice');
+    const path = await synthesizeToCache(rowId, text, {
+      apiKey, region: getVoiceRegion(), voiceId, speed: getVoiceSpeed(),
+      emotion: moodToEmotion(moodLabel), readParens: getVoiceReadParens(),
+    });
+    if (!path) throw new Error('nothing to speak');
+    updateMessageContent(rowId, JSON.stringify({ text, status: 'done', path }));
+  } catch {
+    updateMessageContent(rowId, JSON.stringify({ text, status: 'failed' }));
+  }
+  notifyMessage(conversationId);
+}
+
 /** True while a rolling-summary API call is in flight — the 重置总结 button
  *  disables itself so the reset can't be overwritten by a landing summary. */
 export function isSummarizing(conversationId: string): boolean {
@@ -229,7 +291,18 @@ export async function sendTurn(
     await runTurn(conversationId, cb); // explicit retry — no hold
     return;
   }
-  insertMessage(conversationId, 'user', newText, 'complete', 'normal', null, undefined, quotedId ?? null);
+  // 已读 (v3.0): stamp when she would actually look at her phone.
+  const rhythmPersona = getPersona(convo.personaId);
+  const readAt = getRhythmEnabled()
+    ? computeReadAt(
+        availabilityAt(parseProConfig(rhythmPersona?.proConfig ?? null)?.schedule, new Date()),
+        Date.now(), Math.random,
+      )
+    : null;
+  insertMessage(
+    conversationId, 'user', newText, 'complete', 'normal', null, undefined, quotedId ?? null, null,
+    readAt,
+  );
   touchConversation(conversationId);
   cb.onUserSaved?.();
   await scheduleOrRun(conversationId, cb);
@@ -270,6 +343,62 @@ export async function fireTrigger(
   cb.onUserSaved?.();
   await runTurn(conversationId, cb);
   return true;
+}
+
+/** 立即开始 (v2.9): her first line in a chat born from one sentence — she
+ *  opens, the user hasn't said anything yet. Once per empty conversation. */
+export async function fireOpening(conversationId: string, cb: TurnCallbacks): Promise<boolean> {
+  if (activeTurns.has(conversationId)) return false;
+  const convo = getConversation(conversationId);
+  if (!convo) return false;
+  const persona = getPersona(convo.personaId);
+  const state = parseShaping(persona?.shaping);
+  if (!state) return false;
+  const spoken = listMessages(conversationId).some((m) => m.kind !== 'meta');
+  if (spoken) return false;
+  insertMessage(conversationId, 'user', buildOpeningTrigger(state), 'complete', 'trigger');
+  cb.onUserSaved?.();
+  await runTurn(conversationId, cb);
+  return true;
+}
+
+/** "还在吗" (v3.0): she asked a question and the user went quiet with the chat
+ *  open. One gentle nudge, only for a persona with a life (schedule/life on),
+ *  never while she sleeps, never on top of an existing trigger. */
+export async function fireSilence(conversationId: string, cb: TurnCallbacks): Promise<boolean> {
+  if (activeTurns.has(conversationId)) return false;
+  const convo = getConversation(conversationId);
+  if (!convo) return false;
+  const persona = getPersona(convo.personaId);
+  if (!persona) return false;
+  const cfg = parseProConfig(persona.proConfig);
+  if (!(convo.lifeEnabled === 1 || hasRealismConfig(cfg))) return false;
+  const all = listMessages(conversationId).filter(
+    (m) => m.kind !== 'meta' && m.kind !== 'experience',
+  );
+  const last = all[all.length - 1];
+  if (!last || last.role !== 'assistant' || last.kind !== 'normal') return false;
+  if (!/[?？]\s*$/.test(stripLeakedStateTags(last.content).trim())) return false;
+  if (isAsleepAt(cfg?.schedule, new Date())) return false;
+  insertMessage(conversationId, 'user', TRIGGER_SILENCE, 'complete', 'trigger');
+  cb.onUserSaved?.();
+  await runTurn(conversationId, cb);
+  return true;
+}
+
+/** Dev-mode meta line for one shaping event. */
+function shapingEventLine(ev: ShapingEvent): string {
+  switch (ev.kind) {
+    case 'attitude': return `👀 观察员：对方对「${ev.dim}=${ev.variant}」的态度是「${ev.text}」`;
+    case 'settle': return `🎨 「${ev.dim}=${ev.variant}」定了下来`;
+    case 'autosettle': return `🎨 「${ev.dim}」只剩「${ev.variant}」，自动定型`;
+    case 'exclude': return `🎨 收起了「${ev.dim}=${ev.variant}」`;
+    case 'rotate': return `🎨 接下来试探「${ev.dim}=${ev.variant}」`;
+    case 'skip': return `🎨 「${ev.dim}」试遍没有定论，先放一放`;
+    case 'portrait': return `🎨 自画像 +「${ev.text}」`;
+    case 'name': return `🎨 她给自己起了名字：${ev.text}`;
+    default: return '🎨 风格已全部定型';
+  }
 }
 
 /** 病娇 leave-negotiation: the user asks to leave; she may hold ([病娇:挽留]) or let go. */
@@ -455,14 +584,117 @@ async function runTurnInner(
   const nowD = new Date();
 
   const promptParts: DmPromptParts = {
+    coreRules: renderPrompt('core.rules'),
     persona: persona.systemPrompt,
     coreTruth: renderPrompt('core.truth'),
     examples: buildExampleSection(cfg ?? {}),
   };
+  // 立即开始 (v2.9): she shapes herself. The state is read here; the observer
+  // call (below, once recentBodies exists) may update it before the guide is
+  // rendered, so the tree she acts this turn already reflects the verdict on
+  // her last one.
+  let shaping = parseShaping(persona.shaping);
+  const triggerTurn = all[all.length - 1]?.kind === 'trigger';
+  const memoryOn = convo.memoryEnabled === 1;
+  const perceptionOn = getPerceptionEnabled() || !!shaping;
+  const textureOn = getTextureEnabled();
+  let closeness = convo.closeness ?? CLOSENESS_START;
+  let temperature = getTemperature();
+  let userMood: string | null = null;
+
+  // 感知 (v3.0): the ONE cheap pre-turn call. Register/length (was the 动态
+  // classifier), the shaping verdict (was the 观察员), plus what a partner
+  // notices: the user's mood, facts for the 记忆库, follow-ups, a 亲密度 nudge,
+  // the birthday. Any failure → this turn simply runs on manual settings.
+  if (perceptionOn) {
+    const herLast = stripLeakedStateTags(recentAssistantTurnBodies(all).slice(-1)[0] ?? '');
+    const userReply = currentUserBurst(window);
+    if (shouldPerceive({ herLast, userReply })) {
+      try {
+        const known = memoryOn ? listMemories(conversationId) : [];
+        const raw = await chatOnce(apiKey, getSummarizerModel(), [
+          {
+            role: 'user',
+            content: buildPerceptionPrompt({
+              herLast, userReply, memories: known, personaName: persona.name, now: nowD, shaping,
+            }),
+          },
+        ], 0);
+        const perc = parsePerception(raw, {
+          userReplied: userReply.trim().length > 0,
+          knownMemories: known.map((m) => m.text),
+          shaping,
+        });
+        if (perc.register && getTempMode() === 'dynamic') temperature = TEMP_BY_CHOICE[perc.register];
+        if (perc.length) promptParts.lengthHint = renderPrompt(LENGTH_PROMPT_KEY[perc.length]);
+        userMood = perc.userMood;
+        if (memoryOn) {
+          for (const t of perc.facts) insertMemory(conversationId, t);
+          for (const f of perc.followUps) {
+            insertMemory(conversationId, f.text, followUpAtFor(nowD, f.days));
+          }
+        }
+        if (perc.closeness !== 0) {
+          closeness = clampCloseness(closeness + perc.closeness);
+          setConversationCloseness(conversationId, closeness);
+        }
+        if (perc.birthday && perc.birthday !== getUserBirthday()) setUserBirthday(perc.birthday);
+        if (shaping) {
+          const applied = applyJudgement(shaping, toJudgement(perc));
+          if (applied.events.length > 0) {
+            shaping = applied.state;
+            setPersonaShaping(persona.id, JSON.stringify(shaping));
+            if (perc.name && perc.name !== persona.name && applied.events.some((e) => e.kind === 'name')) {
+              renamePersona(persona.id, perc.name);
+              // The home chat was titled with her placeholder name at creation.
+              if (convo.title === persona.name) renameConversation(conversationId, perc.name);
+            }
+            for (const ev of applied.events) logMeta(conversationId, shapingEventLine(ev));
+          }
+        }
+        const notes = [
+          perc.register && `语气「${perc.register}」`,
+          perc.length && `篇幅「${perc.length}」`,
+          perc.userMood && `对方「${perc.userMood}」`,
+          perc.facts.length > 0 && `记了${perc.facts.length}条`,
+          perc.followUps.length > 0 && `跟进${perc.followUps.length}件`,
+          perc.closeness !== 0 && `亲密度${perc.closeness > 0 ? '+' : '-'}1 → ${closeness}`,
+          perc.birthday && `生日 ${perc.birthday}`,
+        ].filter(Boolean);
+        logMeta(conversationId, `👀 感知：${notes.length ? notes.join('，') : '没有新发现'}`);
+      } catch {
+        // observer down → manual settings, no memory writes this turn
+      }
+    }
+  }
+  if (shaping) promptParts.shaping = buildShapingSection(shaping);
 
   let usagePeeked = false; // 'check'-mode screen-usage peek, committed only on success
   if (hasRealismConfig(cfg)) promptParts.profile = buildProSections(cfg!);
   if (realism) {
+    // 生成的一天 (v3.0): 2–3 small events, once per day, for personas with a schedule.
+    let dayLog = parseDayLog(persona.dayLog);
+    if (cfg?.schedule?.length && needsDaySeed(dayLog, nowD)) {
+      try {
+        const raw = await chatOnce(apiKey, getSummarizerModel(), [
+          {
+            role: 'user',
+            content: buildDayPrompt({
+              persona: persona.systemPrompt, schedule: cfg.schedule, interests: cfg.interests,
+              now: nowD, holidays: holidaysOn(nowD), yesterday: dayLog?.events ?? [],
+            }),
+          },
+        ], 1.0);
+        const events = parseDayEvents(raw);
+        if (events.length) {
+          dayLog = { day: dayKeyOf(nowD), events };
+          setPersonaDayLog(persona.id, JSON.stringify(dayLog));
+          logMeta(conversationId, `☀️ 她的今天：${events.join('；')}`);
+        }
+      } catch {
+        // no day today — the schedule alone carries her
+      }
+    }
     const tailId = all[all.length - 1]?.id;
     const prevNormal = [...all].reverse().find((m) => m.kind === 'normal' && m.id !== tailId);
     const lastReply = [...all]
@@ -479,6 +711,14 @@ async function runTurnInner(
       mood,
       thought: convo.currentThought,
       lastReply: lastReply ? stripLeakedStateTags(lastReply) : null,
+      agenda: convo.agenda ?? null,
+      closenessLine: perceptionOn ? closenessLine(closeness) : null,
+      calendarLines: calendarLines(nowD, getUserBirthday()),
+      dayEventsLine: dayEventsLine(dayLog, nowD),
+      dueFollowUps: memoryOn
+        ? dueFollowUps(listMemories(conversationId), nowD.getTime()).map((e) => e.text)
+        : [],
+      userMood,
     });
     if (cfg?.moodCurve) {
       promptParts.curve = buildCurveLine(cfg.moodCurve, parseDrift(convo.curveDrift), nowD);
@@ -519,10 +759,9 @@ async function runTurnInner(
 
   // 记忆库: durable model-curated memory, injected every request. The list is
   // captured HERE so the [忘记:n] indices she writes match the numbering she saw.
-  const memoryOn = convo.memoryEnabled === 1;
   const memories = memoryOn ? listMemories(conversationId) : [];
   if (memoryOn) {
-    promptParts.memoryInstructions = buildMemoryInstructions(memories);
+    promptParts.memoryInstructions = buildMemoryInstructions(memories, perceptionOn);
     promptParts.memory = buildMemoryEvidence(memories);
   }
 
@@ -636,33 +875,76 @@ async function runTurnInner(
       content: realism ? `${fmtTimestamp(m.createdAt)} ${content}` : content,
     };
   });
+  // 标记通则 (v2.9): the shared marker rules ride ONCE, only when at least one
+  // marker-bearing block is present (the state tag / 拍一拍 count — they live
+  // in the realism rules).
+  if (
+    promptParts.realism || promptParts.memoryInstructions || promptParts.stickers ||
+    promptParts.photos || promptParts.yandere || promptParts.master || promptParts.transfer ||
+    promptParts.shaping
+  ) {
+    promptParts.markers = renderPrompt('markers.rules');
+  }
+
+  // 节奏 (v3.0): is she free, busy or asleep right now? Busy → one short line
+  // now, the real reply written now and delivered when the slot ends; asleep
+  // → silence now, the reply lands after she wakes. Never on a trigger turn.
+  const avail = availabilityAt(cfg?.schedule, nowD);
+  const shortKey = `rhythm.short.${conversationId}`;
+  const rhythm = decideRhythm({
+    avail,
+    enabled: getRhythmEnabled() && realism && !!cfg?.schedule?.length,
+    triggerTurn: triggerTurn || !!opts?.leaveRequest,
+    lastShortUntil: parseInt(getPref(shortKey) ?? '', 10) || null,
+    nowMs: nowD.getTime(),
+    rand: Math.random,
+  });
+  if (rhythm.mode === 'short') promptParts.rhythm = busyDirective(rhythm.activity ?? '忙');
+  if (textureOn) promptParts.texture = renderPrompt('texture.section');
+
+  /** Write the full reply NOW under a "you just got free" directive and hand it
+   *  to the scheduler. Returns false when nothing usable came back. */
+  const deferFullReply = async (deliverAt: number): Promise<boolean> => {
+    const parts: DmPromptParts = {
+      ...promptParts, rhythm: deferredDirective(rhythm.activity ?? '忙', new Date(deliverAt)),
+      texture: null,
+    };
+    const p = composeDmPrompt(parts);
+    const raw = await chatOnce(
+      apiKey, getModel(), buildRequestMessages(p.instructions, p.evidence, windowMapped, ''),
+      temperature,
+    );
+    const text = cleanDeferredText(raw);
+    if (!text) return false;
+    if (deferredReply) {
+      await deferredReply({ conversationId, text, fireAt: deliverAt, title: persona.name });
+    } else {
+      insertMessage(conversationId, 'assistant', text, 'complete', 'normal'); // Expo Go: no scheduler
+    }
+    const d = new Date(deliverAt);
+    logMeta(
+      conversationId,
+      `⏳ 她${avail.state === 'asleep' ? '在睡觉' : '在忙'}，完整回复将在 ` +
+        `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} 送达`,
+    );
+    return true;
+  };
+  if (rhythm.mode === 'defer' && rhythm.deliverAt) {
+    try {
+      if (await deferFullReply(rhythm.deliverAt)) {
+        touchConversation(conversationId);
+        cb.onDone(all[all.length - 1]);
+        return;
+      }
+    } catch {
+      // scheduler or model down → she just replies now
+    }
+  }
+
   const prompt = composeDmPrompt(promptParts);
   const messages = buildRequestMessages(
     prompt.instructions, prompt.evidence, windowMapped, '',
   );
-
-  // 动态想象力: one tiny classifier call picks THIS reply's register from the
-  // user's latest message — 严谨 when precision matters (diary talk, facts,
-  // questions), 奔放 when play does. Any failure → the manual setting rides.
-  let temperature = getTemperature();
-  if (getTempMode() === 'dynamic') {
-    // kind==='normal' only: sticker/transfer/game rows carry ids/JSON, not prose.
-    const userBurst = currentUserBurst(window);
-    if (userBurst.trim()) {
-      try {
-        const raw = await chatOnce(apiKey, SUMMARIZER_MODEL, [
-          { role: 'user', content: buildTempClassifierPrompt(userBurst) },
-        ], 0);
-        const choice = parseTempChoice(raw);
-        if (choice) {
-          temperature = TEMP_BY_CHOICE[choice];
-          logMeta(conversationId, `🌡 动态想象力：这条按「${choice}」回复（temperature ${temperature}）`);
-        }
-      } catch {
-        // classifier down → manual setting rides
-      }
-    }
-  }
 
   let draft = '';
   let deltaCount = 0;
@@ -701,7 +983,7 @@ async function runTurnInner(
       narrationSuspects(fullText, narrationGate).length > 0
     ) {
       try {
-        const fixed = await chatOnce(apiKey, SUMMARIZER_MODEL, [
+        const fixed = await chatOnce(apiKey, getSummarizerModel(), [
           {
             role: 'user',
             content: buildRepairPrompt(fullText, { narration: narrationGate.photo || narrationGate.lock }),
@@ -794,6 +1076,46 @@ async function runTurnInner(
       bodyText = pm.clean;
       patAction = pm.pat;
     }
+    // 立即开始 (v2.9): her two explicit life markers (作息/兴趣 → proConfig),
+    // then the turn closes — what she acted is recorded for the next observer
+    // call and the probe rotates on schedule. State is rewritten every turn.
+    if (shaping) {
+      const lo = extractLifeMarkers(bodyText);
+      bodyText = lo.clean;
+      const merged = mergeLifeIntoConfig(cfg, lo);
+      if (merged) {
+        setPersonaProConfig(persona.id, JSON.stringify(merged));
+        if (lo.schedule.length) {
+          logMeta(conversationId, `🎨 她定了作息：${lo.schedule.map((e) => `${e.start}-${e.end} ${e.activity}`).join('；')}`);
+        }
+        if (lo.interests.length) logMeta(conversationId, `🎨 她多了兴趣：${lo.interests.join('、')}`);
+      }
+      const closed = advanceTurn(shaping);
+      setPersonaShaping(persona.id, JSON.stringify(closed.state));
+      for (const ev of closed.events) logMeta(conversationId, shapingEventLine(ev));
+    }
+    // 小动作 (v3.0): 撤回 (the bubble above the marker), 引用 (quote the user's
+    // earlier line), 语音 (a voice bubble). Own-line markers, taught only when
+    // the switch is on.
+    let recalledText: string | null = null;
+    let quoteId: string | null = null;
+    const voiceLines: string[] = [];
+    if (textureOn) {
+      const rc = extractRecall(bodyText);
+      recalledText = rc.recalled;
+      bodyText = rc.rest;
+      const q = extractQuote(bodyText);
+      bodyText = q.clean;
+      if (q.fragment) {
+        quoteId = resolveQuoteTarget(
+          q.fragment,
+          all.filter((m) => m.role === 'user' && m.kind === 'normal').map((m) => ({ id: m.id, content: m.content })),
+        );
+      }
+      const v = VOICE_MARKER.extract(bodyText);
+      bodyText = v.clean;
+      voiceLines.push(...v.values.filter((x) => x.trim()));
+    }
     // Leave-request fail-safe: allow leaving unless she EXPLICITLY held us.
     // (Models often agree in words but forget the marker — never trap the user.)
     const release = opts?.leaveRequest ? !ya.hold : ya.release;
@@ -807,6 +1129,13 @@ async function runTurnInner(
     // pipeline stage (afterMemory still carries the markers later stages ate,
     // e.g. a synthesized [主人:…] line on a tag-only reply).
     let saved: Message | null = null;
+    if (recalledText) {
+      // She said it, then took it back: the row exists, the user sees only the tombstone.
+      const r = insertMessage(conversationId, 'assistant', recalledText, 'complete', 'normal');
+      recallGroupMessage(conversationId, r.id, recallTombstone(persona.name));
+      logMeta(conversationId, `↩️ 她撤回了「${recalledText.slice(0, 30)}」`);
+      saved = r;
+    }
     if (bodyText.trim().length > 0) {
       // 消息切割 (v2.3): one long reply → several real bubbles. External call
       // may ONLY insert --- (parseCut verifies char-identity); any doubt →
@@ -814,7 +1143,7 @@ async function runTurnInner(
       let chunks = [bodyText.trim()];
       if (getMsgCut() && needsCut(bodyText)) {
         try {
-          const rawCut = await chatOnce(apiKey, SUMMARIZER_MODEL, [
+          const rawCut = await chatOnce(apiKey, getSummarizerModel(), [
             { role: 'user', content: buildCutPrompt(bodyText.trim()) },
           ], 0);
           const segs = parseCut(bodyText.trim(), rawCut);
@@ -823,15 +1152,33 @@ async function runTurnInner(
           // cutter down → single bubble
         }
       }
+      // 打错字 (v3.0): rarely, one homophone slip and a *correction bubble.
+      if (textureOn) chunks = maybeTypo(chunks, { rand: Math.random, casual: temperature >= 1.0 });
       const t0 = Date.now();
       chunks.forEach((c, i) => {
         const row = insertMessage(
           conversationId, 'assistant', c, 'complete', 'normal',
           i === 0 ? reasoningAcc.trim() || null : null,
           t0 + i, // strictly increasing stamps keep order — every chunk, including 0
+          i === 0 ? quoteId : null, // 引用 rides on the first bubble
         );
         saved = saved ?? row;
       });
+    }
+    // 语音 (v3.0): each [语音:…] becomes a voice bubble when voice is configured,
+    // else its text lands as an ordinary bubble — the words are never lost.
+    for (const line of voiceLines) {
+      const canSpeak = getVoiceFeature() && !!(persona.voiceId?.trim() || getVoiceId());
+      if (canSpeak) {
+        const row = insertMessage(
+          conversationId, 'assistant', JSON.stringify({ text: line, status: 'pending' }), 'complete', 'voice',
+        );
+        saved = saved ?? row;
+        void synthesizeVoiceRow(conversationId, row.id, line, persona.voiceId, convo.moodLabel);
+      } else {
+        const row = insertMessage(conversationId, 'assistant', line, 'complete', 'normal');
+        saved = saved ?? row;
+      }
     }
     for (const label of labels) {
       const st = resolveSticker(stickers, label);
@@ -878,7 +1225,7 @@ async function runTurnInner(
       // write, unresolvable sticker, state tag alone, yandere/master op)
       // already had its effect — show a beat instead of the raw channel.
       const hadOps =
-        memoryOpsApplied || labels.length > 0 || tagFound || maOps ||
+        memoryOpsApplied || labels.length > 0 || tagFound || maOps || voiceLines.length > 0 ||
         transferAmount != null || patAction != null || im.scene !== null ||
         ya.vibrate || ya.lock || ya.hold || ya.release || ya.demand !== null;
       saved = insertMessage(
@@ -897,6 +1244,14 @@ async function runTurnInner(
     }
     touchConversation(conversationId);
     if (tag) setConversationState(conversationId, tag.mood, tag.intensity, tag.thought);
+    if (tag?.agenda != null) setConversationAgenda(conversationId, tag.agenda || null);
+    if (rhythm.mode === 'short' && rhythm.deliverAt) {
+      // The short line landed; the real reply is written now and delivered when
+      // her slot ends. One short line per slot.
+      setPref(shortKey, String(avail.state === 'busy' ? avail.until : 0));
+      const deliverAt = rhythm.deliverAt;
+      void deferFullReply(deliverAt).catch(() => {});
+    }
     if (growth != null && cfg?.moodCurve && cfg.curveGrowth !== false) {
       const r = applyGrowth(
         parseDrift(convo.curveDrift), growth, dayPartAt(new Date()), Date.now(),
@@ -927,6 +1282,8 @@ async function runTurnInner(
       if (yandereOn) cleaned = extractYandereMarkers(cleaned).clean;
       if (masterOn) cleaned = extractMasterMarkers(cleaned).clean;
       if (realism) cleaned = extractPatMarker(cleaned).clean;
+      if (shaping) cleaned = extractLifeMarkers(cleaned).clean;
+      if (textureOn) cleaned = VOICE_MARKER.extract(extractQuote(extractRecall(cleaned).rest).clean).clean;
       insertMessage(
         conversationId, 'assistant',
         cleaned.length > 0 ? cleaned : draft,
@@ -1076,7 +1433,7 @@ export async function maybeSummarize(conversationId: string): Promise<void> {
         return `${who}：${body}`;
       })
       .join('\n');
-    const summary = await chatOnce(apiKey, SUMMARIZER_MODEL, [
+    const summary = await chatOnce(apiKey, getSummarizerModel(), [
       { role: 'system', content: persona?.summaryPrompt ?? renderPrompt('summary.rolling') },
       {
         role: 'user',

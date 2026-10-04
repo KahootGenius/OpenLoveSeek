@@ -42,7 +42,12 @@ export function composePromptEnvelope(envelope: PromptEnvelope): ComposedPromptE
 }
 
 export interface DmPromptParts {
+  coreRules: string; // 核心守则 (v2.9): highest precedence, rendered FIRST
+  lengthHint?: string | null; // 动态篇幅 (v2.9): this turn's 【这条回复的篇幅】 line
+  rhythm?: string | null; // 节奏 (v3.0): busy/deferred directive for this turn
+  texture?: string | null; // 小动作 (v3.0): 撤回/引用/语音 teaching
   persona: string;
+  shaping?: string | null; // 立即开始 (v2.9): the shaping guide, right after the one-line persona
   coreTruth: string;
   diaryInstructions?: string | null;
   examples?: string | null;
@@ -52,6 +57,7 @@ export interface DmPromptParts {
   memoryInstructions?: string | null;
   tic?: string | null;
   variety?: string | null;
+  markers?: string | null; // 标记通则 (v2.9): shared marker rules, once, ahead of the feature blocks
   stickers?: string | null;
   photos?: string | null;
   yandere?: string | null;
@@ -68,7 +74,9 @@ export interface DmPromptParts {
 }
 
 export interface OutreachPromptParts {
+  coreRules: string;
   persona: string;
+  identity?: string | null; // 立即开始: who she has become (no marker teaching — outreach can't parse them)
   coreTruth: string;
   examples?: string | null;
   profile?: string | null;
@@ -84,7 +92,9 @@ export interface OutreachPromptParts {
 export function composeOutreachPrompt(parts: OutreachPromptParts): ComposedPromptEnvelope {
   return composePromptEnvelope({
     instructions: [
+      { key: 'core.rules', content: parts.coreRules },
       { key: 'persona', content: parts.persona },
+      { key: 'shaping.identity', content: parts.identity },
       { key: 'persona.examples', content: parts.examples },
       { key: 'persona.profile', content: parts.profile },
       { key: 'core.truth', content: parts.coreTruth },
@@ -101,7 +111,15 @@ export function composeOutreachPrompt(parts: OutreachPromptParts): ComposedPromp
 export function composeDmPrompt(parts: DmPromptParts): ComposedPromptEnvelope {
   return composePromptEnvelope({
     instructions: [
+      // 核心守则 leads and claims precedence over everything after it —
+      // including the user-authored persona — so a verbose persona cannot
+      // out-vote the length/format rules. The per-turn 篇幅 line sits right
+      // under it as that rule's concrete instantiation.
+      { key: 'core.rules', content: parts.coreRules },
+      { key: 'length.hint', content: parts.lengthHint },
+      { key: 'rhythm.now', content: parts.rhythm },
       { key: 'persona', content: parts.persona },
+      { key: 'shaping.guide', content: parts.shaping },
       { key: 'core.truth', content: parts.coreTruth },
       { key: 'moments.instructions', content: parts.diaryInstructions },
       { key: 'persona.examples', content: parts.examples },
@@ -111,6 +129,8 @@ export function composeDmPrompt(parts: DmPromptParts): ComposedPromptEnvelope {
       { key: 'memory.instructions', content: parts.memoryInstructions },
       { key: 'tic.nudge', content: parts.tic },
       { key: 'variety.nudge', content: parts.variety },
+      { key: 'markers.rules', content: parts.markers },
+      { key: 'texture.section', content: parts.texture },
       { key: 'stickers.section', content: parts.stickers },
       { key: 'image.section', content: parts.photos },
       { key: 'yandere.section', content: parts.yandere },

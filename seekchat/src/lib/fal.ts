@@ -60,7 +60,7 @@ export function parseFalImages(json: unknown): string[] {
     .filter((u): u is string => typeof u === 'string');
 }
 
-// 生成 (v2.6): thin fetch wrapper mirroring deepseek.ts's streamChat — untested
+// 生成 (v2.6): thin fetch wrapper mirroring llm.ts's streamChat — untested
 // by design (I/O). Callers pass one of the model-id constants above plus an
 // input built with buildFalInput.
 export async function falGenerate(

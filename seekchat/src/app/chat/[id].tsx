@@ -24,7 +24,8 @@ import { enqueueFiles, playFile, stopVoice, synthesizeToCache, VoiceCapError } f
 
 import { DAY_PARTS, effectiveOpenness, parseDrift } from '../../lib/curve';
 import {
-  fireTrigger, generatePhoto, isHoldPending, isStreaming, isSummarizing, logMeta, noteTyping,
+  fireOpening, fireSilence, fireTrigger, generatePhoto, isHoldPending, isStreaming, isSummarizing,
+  logMeta, noteTyping,
   receiveTransfer, requestLeave, sendGame, sendPat, sendSticker, sendTransfer, sendTurn, stopTurn,
   subscribeMessages, subscribeYandere,
 } from '../../lib/engine';
@@ -40,7 +41,7 @@ import { CommandCard } from '../../components/CommandCard';
 import { DemandGate } from '../../components/DemandGate';
 import { MessageActionMenu, MenuAnchor } from '../../components/MessageActionMenu';
 import { splitBrackets } from '../../lib/brackets';
-import { ApiError, userMessageFor } from '../../lib/deepseek';
+import { ApiError, userMessageFor } from '../../lib/llm';
 import {
   buildRequestMessages, countUnsummarized, estimateTokens, selectWindow,
 } from '../../lib/context';
@@ -53,6 +54,7 @@ import {
 } from '../../lib/settings';
 import { activityAt, decayedMood, TriggerPath } from '../../lib/life';
 import { fmtDivider, hasRealismConfig, parseProConfig } from '../../lib/pro';
+import { newestReadUserId } from '../../lib/rhythm';
 import { extractPatMarker } from '../../lib/markers';
 import {
   cleanDraftForDisplay, stripEchoedTimestamps, stripLeakedStateTags,
@@ -105,6 +107,8 @@ interface Bubble {
   reasoning?: string;
   srcId?: string; // the source message id (for 引用 long-press)
   quote?: { who: string; text: string }; // 引用 target, shown above the first bubble
+  voice?: { text: string; status: 'pending' | 'done' | 'failed'; path?: string }; // 语音 (v3.0)
+  read?: boolean; // 已读 (v3.0): the newest user bubble she has read
 }
 
 /** Bracketed stage-directions render gray-italic. */
@@ -129,6 +133,7 @@ function toBubbles(
 ): Bubble[] {
   const bubbles: Bubble[] = [];
   const nowMs = Date.now();
+  const readId = newestReadUserId(messages, nowMs);
   let prevAt: number | null = null;
   for (const m of messages) {
     // Future-stamped experience rows (staggered 朋友圈 reveals) aren't real yet.
@@ -150,6 +155,11 @@ function toBubbles(
         meta: true,
         srcId: m.kind === 'experience' ? m.id : undefined,
       });
+      continue;
+    }
+    if (m.kind === 'recall') {
+      // 撤回 (v3.0): the tombstone line, always visible.
+      bubbles.push({ key: m.id, role: 'assistant', text: m.content, meta: true });
       continue;
     }
     if (m.kind === 'game') {
@@ -178,6 +188,23 @@ function toBubbles(
       });
       continue;
     }
+    if (m.kind === 'voice') {
+      let voice: NonNullable<Bubble['voice']> = { text: m.content, status: 'failed' };
+      try {
+        const j = JSON.parse(m.content) as { text?: unknown; status?: unknown; path?: unknown };
+        if (j && typeof j.text === 'string') {
+          voice = {
+            text: j.text,
+            status: j.status === 'done' ? 'done' : j.status === 'pending' ? 'pending' : 'failed',
+            path: typeof j.path === 'string' ? j.path : undefined,
+          };
+        }
+      } catch {
+        // legacy/garbage content: show as failed with the raw text
+      }
+      bubbles.push({ key: m.id, role: m.role, text: voice.text, voice, srcId: m.id, quote });
+      continue;
+    }
     // Retro-scrub: replies saved before the envelope parser may carry a raw
     // leaked 【状态|…】 — never display it (nor a bubble of only that).
     const content = m.role === 'assistant' ? stripLeakedStateTags(m.content) : m.content;
@@ -192,6 +219,7 @@ function toBubbles(
         quote: i === 0 ? quote : undefined, // quote block only above the first bubble
         interrupted: m.status === 'interrupted' && i === shown.length - 1,
         reasoning: m.role === 'assistant' && i === 0 ? (m.reasoning ?? undefined) : undefined,
+        read: m.role === 'user' && m.id === readId && i === shown.length - 1,
       });
     });
   }
@@ -266,6 +294,7 @@ export default function ChatScreen() {
   const [photoViewer, setPhotoViewer] = useState<string | null>(null);
   const [plusOpen, setPlusOpen] = useState(false);
   const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set());
+  const [voiceShown, setVoiceShown] = useState<Set<string>>(new Set()); // 语音 → 文字 toggles
   const [locked, setLocked] = useState(false);
   const [held, setHeld] = useState(false);
   const [askingLeave, setAskingLeave] = useState(false);
@@ -585,6 +614,51 @@ export default function ChatScreen() {
     });
   };
 
+  // 立即开始 (v2.9): in a chat born from one sentence she speaks first.
+  // fireOpening refuses once anything has been said; then the ordinary
+  // catch-up trigger gets its turn as before.
+  const beginOpening = () => {
+    if (busy.current) return;
+    busy.current = true;
+    setError(null);
+    setDraft('');
+    setRevealed(0);
+    void fireOpening(id, makeCallbacks()).then((fired) => {
+      if (!fired) {
+        setDraft(null);
+        busy.current = false;
+        beginTrigger('catchup');
+      }
+    });
+  };
+
+  // "还在吗" (v3.0): she asked, the chat stayed open, the user went quiet.
+  // One nudge per question, 4–8 minutes later, only while this chat is focused.
+  const silenceFired = useRef<string | null>(null);
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant' || last.kind !== 'normal') return;
+    if (!/[?？]\s*$/.test(stripLeakedStateTags(last.content).trim())) return;
+    if (silenceFired.current === last.id) return;
+    const delay = (4 + Math.random() * 4) * 60000;
+    const t = setTimeout(() => {
+      if (!voiceFocusedRef.current || busy.current) return;
+      silenceFired.current = last.id;
+      busy.current = true;
+      setError(null);
+      setDraft('');
+      setRevealed(0);
+      void fireSilence(id, makeCallbacks()).then((fired) => {
+        if (!fired) {
+          setDraft(null);
+          busy.current = false;
+        }
+      });
+    }, delay);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
+
   // ➕ panel registry (v2.0): future features add ENTRIES here, not buttons.
   const plusItems: {
     key: string; icon: string; label: string; show: boolean; onPress: () => void;
@@ -604,7 +678,8 @@ export default function ChatScreen() {
       voiceFocusedRef.current = true;
       if (!firedThisFocus.current) {
         firedThisFocus.current = true;
-        beginTrigger('catchup');
+        if (persona?.shaping) beginOpening();
+        else beginTrigger('catchup');
       }
       return () => {
         firedThisFocus.current = false;
@@ -795,7 +870,18 @@ export default function ChatScreen() {
     if (key === 'reply') setReplyingTo(message);
     else if (key === 'speak') void speakMessage(message);
     else if (key === 'delete') confirmDeleteMessage(message);
-    else if (key === 'copy') void Clipboard.setStringAsync(message.content);
+    else if (key === 'copy') {
+      let text = message.content;
+      if (message.kind === 'voice') {
+        try {
+          const j = JSON.parse(message.content) as { text?: unknown };
+          if (typeof j.text === 'string') text = j.text;
+        } catch {
+          // raw content
+        }
+      }
+      void Clipboard.setStringAsync(text);
+    }
   };
 
   // 照片重试 (v2.6): a failed image row's 重试 button re-fires the SAME
@@ -1125,13 +1211,48 @@ export default function ChatScreen() {
                       )}
                     </Pressable>
                   )}
-                  {!mine && mdOn ? (
+                  {item.voice ? (
+                    <View>
+                      <Pressable
+                        onPress={() => {
+                          if (item.voice?.status === 'done' && item.voice.path) void playFile(item.voice.path);
+                        }}
+                      >
+                        <Text style={s.voiceLine}>
+                          {item.voice.status === 'pending'
+                            ? '🔊 语音 · 生成中…'
+                            : item.voice.status === 'failed'
+                              ? '🔊 语音 · 生成失败'
+                              : '▶  语音'}
+                        </Text>
+                      </Pressable>
+                      {(item.voice.status === 'failed' || voiceShown.has(item.key)) && (
+                        <Text style={s.voiceText}>{item.voice.text}</Text>
+                      )}
+                      {item.voice.status !== 'failed' && (
+                        <Pressable
+                          hitSlop={6}
+                          onPress={() =>
+                            setVoiceShown((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(item.key)) next.delete(item.key);
+                              else next.add(item.key);
+                              return next;
+                            })
+                          }
+                        >
+                          <Text style={s.voiceToggle}>{voiceShown.has(item.key) ? '收起文字' : '转文字'}</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  ) : !mine && mdOn ? (
                     <Markdown text={item.text} />
                   ) : (
                     <BubbleText text={item.text} />
                   )}
                   {item.interrupted && <Text style={s.cut}>⚠ 已截断</Text>}
                 </Pressable>
+                {item.read && <Text style={s.readTag}>已读</Text>}
               </View>
               {mine && <Avatar uri={userAvatar} name={userNick} />}
             </View>
@@ -1417,6 +1538,10 @@ const s = StyleSheet.create({
     alignSelf: 'center', fontSize: 12, color: '#999',
     marginVertical: 8, textAlign: 'center',
   },
+  readTag: { fontSize: 10, color: '#aaa', alignSelf: 'flex-end', marginTop: 2, marginRight: 4 },
+  voiceLine: { fontSize: 15, color: '#333' },
+  voiceText: { fontSize: 13, color: '#666', marginTop: 6, lineHeight: 18 },
+  voiceToggle: { fontSize: 11, color: '#999', marginTop: 4 },
   metaLine: {
     alignSelf: 'center', fontSize: 11, color: '#a06a80', marginVertical: 6,
     textAlign: 'center', backgroundColor: '#f6eaf0', borderRadius: 8,

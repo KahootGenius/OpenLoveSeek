@@ -3,9 +3,14 @@ export type GroupRole = 'admin' | 'member';
 export type MessageStatus = 'complete' | 'interrupted';
 export type MessageKind =
   | 'normal' | 'trigger' | 'pat' | 'sticker' | 'meta' | 'game' | 'transfer' | 'experience'
-  | 'recall' | 'redpacket' | 'image';
+  | 'recall' | 'redpacket' | 'image' | 'voice';
 export type DeliveryMode = 'typewriter' | 'simulated';
-export type ModelId = 'deepseek-v4-flash' | 'deepseek-v4-pro';
+// 模型服务商 (v2.9): the user picks one; keys, model prefs and endpoints are
+// all resolved per provider (providers.ts / settings.ts).
+export type Provider = 'deepseek' | 'glm';
+export type DeepSeekModelId = 'deepseek-flash' | 'deepseek-v4-pro'; // deepseek-flash = V4.1 Flash (2026-09-10)
+export type GlmModelId = 'glm-5.3-flash' | 'glm-4.7' | 'glm-5.3' | 'glm-4.7-flash' | 'glm-4.7-flashx';
+export type ModelId = DeepSeekModelId | GlmModelId;
 
 export interface Persona {
   id: string;
@@ -17,6 +22,8 @@ export interface Persona {
   appearancePrompt: string | null; // 照片 (schema v17): her look, for ref-image generation
   refsFrozen: number; // 0 | 1 — once frozen, ref_images are fixed until 清空重来 (schema v17)
   voiceId: string | null; // 语音 (schema v18): her MiniMax voice_id; null falls back to the global default
+  shaping: string | null; // 立即开始 (schema v19): JSON ShapingState while she shapes herself; null = ordinary persona
+  dayLog?: string | null; // 真实感 (schema v20): JSON DayLog — today's generated small events
   createdAt: number;
   updatedAt: number;
 }
@@ -81,6 +88,8 @@ export interface Conversation {
   avatarUri: string | null; // group portrait (schema v15); DMs keep null
   kind: string; // 'dm' | 'group' (schema v13)
   groupConfig: string | null; // JSON GroupConfig, groups only (schema v13)
+  agenda?: string | null; // 想聊 (schema v20): the thing she wants to bring up
+  closeness?: number | null; // 亲密度 0..100 (schema v20); null = CLOSENESS_START
   createdAt: number;
   updatedAt: number;
 }
@@ -95,6 +104,7 @@ export interface Message {
   reasoning: string | null; // thinking-mode chain, when captured (schema v5)
   quotedId: string | null; // 引用: the message this one replies to (schema v9)
   speakerId: string | null; // group speaker (characterId); null = user / DM (schema v13)
+  readAt?: number | null; // 已读 (schema v20): user rows — when she reads it; null = not stamped
   createdAt: number;
 }
 
@@ -102,6 +112,7 @@ export interface MemoryEntry {
   id: string;
   conversationId: string;
   text: string; // one durable fact/moment, model-authored (schema v8)
+  followUpAt?: number | null; // 跟进 (schema v20): bring it up on/after this time; null = plain memory
   createdAt: number;
 }
 

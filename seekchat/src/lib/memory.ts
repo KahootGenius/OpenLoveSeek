@@ -106,8 +106,31 @@ export const fmtMemoryDate = (ms: number): string => {
   return `${d.getMonth() + 1}月${d.getDate()}日`;
 };
 
-/** Pure. Marker rules and capacity guidance belong in the instruction lane. */
-export function buildMemoryInstructions(entries: MemoryEntry[]): string {
+/** 跟进 (v3.0): entries due now (up to `graceDays` late), oldest first. */
+export const FOLLOWUP_GRACE_DAYS = 2;
+export function dueFollowUps(entries: MemoryEntry[], nowMs: number): MemoryEntry[] {
+  const grace = FOLLOWUP_GRACE_DAYS * 86400000;
+  return entries
+    .filter((e) => e.followUpAt != null && e.followUpAt <= nowMs && nowMs - e.followUpAt <= grace)
+    .sort((a, b) => (a.followUpAt ?? 0) - (b.followUpAt ?? 0));
+}
+
+const fmtFollowUp = (ms: number): string => {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+};
+
+/** Pure. Marker rules and capacity guidance belong in the instruction lane.
+ *  `curated` (v3.0 每轮感知 on): the observer writes the vault, so she is
+ *  told to read it and may only prune — the write marker is not taught. */
+export function buildMemoryInstructions(entries: MemoryEntry[], curated = false): string {
+  if (curated) {
+    return (
+      '【记忆库】这是关于对方的长期记忆，由系统在每轮对话后自动整理，独立于聊天记录、永不遗忘。' +
+      '用它记住对方的性格、喜好、经历与约定；标注了跟进日期的条目到期后主动问起。' +
+      '发现某条已经过时或错误，单独一行写[忘记:序号]删除它。标签用户不可见，绝不在正文提及这套机制。'
+    );
+  }
   let out = renderPrompt('memory.section', {
     maxText: MAX_MEMORY_TEXT,
     maxAdds: MEMORY_ADDS_PER_REPLY,
@@ -128,7 +151,8 @@ export function buildMemoryInstructions(entries: MemoryEntry[]): string {
 export function buildMemoryEvidence(entries: MemoryEntry[]): string {
   if (entries.length === 0) return '';
   const rows = entries
-    .map((e, i) => `${i + 1}. [${fmtMemoryDate(e.createdAt)}] ${e.text}`)
+    .map((e, i) =>
+      `${i + 1}. [${fmtMemoryDate(e.createdAt)}]${e.followUpAt != null ? `[跟进 ${fmtFollowUp(e.followUpAt)}]` : ''} ${e.text}`)
     .join('\n');
   return `【模型记忆条目｜仅参考】\n${rows}`;
 }

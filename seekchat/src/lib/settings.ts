@@ -1,14 +1,38 @@
 import * as SecureStore from 'expo-secure-store';
 import { getPref, setPref } from './db';
-import { DEFAULT_MODEL, HISTORY_BUDGET } from './constants';
-import type { DeliveryMode, ModelId } from './types';
+import { HISTORY_BUDGET } from './constants';
+import { bindLlmRegion } from './llm';
+import { coerceModel, PROVIDERS, providerOf } from './providers';
+import type { GlmRegion } from './providers';
+import type { DeliveryMode, ModelId, Provider } from './types';
 import type { UsageMode } from './usage';
 
-const KEY_NAME = 'deepseek_api_key';
+// 模型服务商 (v2.9): DeepSeek (the original, default) or GLM (智谱 — Z.ai
+// 国际 / open.bigmodel.cn 国内). Every chat call site asks getApiKey() and
+// getModel() below, so switching here re-routes DM turns, group flow,
+// moments, outreach and every utility call at once.
+export const getProvider = (): Provider => (getPref('provider') === 'glm' ? 'glm' : 'deepseek');
+export const setProvider = (p: Provider): void => setPref('provider', p);
 
-export const getApiKey = (): Promise<string | null> => SecureStore.getItemAsync(KEY_NAME);
-export const setApiKey = (key: string): Promise<void> =>
-  SecureStore.setItemAsync(KEY_NAME, key.trim());
+// One SecureStore slot per provider — a key survives switching away and back.
+// 'deepseek_api_key' is the pre-v2.9 slot name, so existing installs keep theirs.
+const KEY_NAMES: Record<Provider, string> = {
+  deepseek: 'deepseek_api_key',
+  glm: 'glm_api_key',
+};
+export const getProviderKey = (p: Provider): Promise<string | null> =>
+  SecureStore.getItemAsync(KEY_NAMES[p]);
+export const setProviderKey = (p: Provider, key: string): Promise<void> =>
+  SecureStore.setItemAsync(KEY_NAMES[p], key.trim());
+/** The ACTIVE provider's key — null still means "not configured". */
+export const getApiKey = (): Promise<string | null> => getProviderKey(getProvider());
+
+// GLM 区域: a GLM key is bound to the platform that issued it (国际 Z.ai is
+// the default, like MiniMax's; 国内 open.bigmodel.cn is opt-in). Bound into
+// llm.ts here so the fetch wrapper stays db-free.
+export const getGlmRegion = (): GlmRegion => (getPref('glmRegion') === 'cn' ? 'cn' : 'global');
+export const setGlmRegion = (r: GlmRegion): void => setPref('glmRegion', r);
+bindLlmRegion(getGlmRegion);
 
 // fal.ai key (v2.6): BYO, stored exactly like the DeepSeek key above.
 const FAL_KEY_NAME = 'fal_api_key';
@@ -30,14 +54,22 @@ export const getImageDailyCap = (): number => {
 export const setImageDailyCap = (n: number): void =>
   setPref('imageDailyCap', String(Math.min(50, Math.max(1, n))));
 
-const VALID_MODELS: ModelId[] = ['deepseek-v4-flash', 'deepseek-v4-pro'];
+// Model choice is remembered PER provider ('model' is the pre-v2.9 DeepSeek
+// pref; GLM gets its own) and validated against that provider's current list
+// — unset, retired (deepseek-chat/-reasoner) and foreign ids fall back to the
+// provider default (providers.coerceModel).
+const MODEL_PREFS: Record<Provider, string> = { deepseek: 'model', glm: 'glmModel' };
 
 export const getModel = (): ModelId => {
-  const v = getPref('model') as ModelId | null;
-  // Falls back for unset AND for legacy stored values (deepseek-chat/-reasoner).
-  return v && VALID_MODELS.includes(v) ? v : DEFAULT_MODEL;
+  const p = getProvider();
+  return coerceModel(p, getPref(MODEL_PREFS[p]));
 };
-export const setModel = (m: ModelId): void => setPref('model', m);
+export const setModel = (m: ModelId): void => setPref(MODEL_PREFS[providerOf(m)], m);
+
+// 工具模型: summarizer / cutter / repair / classifier calls use the active
+// provider's cheapest fast model (replaces the SUMMARIZER_MODEL constant, which
+// would have sent a DeepSeek model id to GLM).
+export const getSummarizerModel = (): ModelId => PROVIDERS[getProvider()].utilityModel;
 
 export const getDeliveryMode = (): DeliveryMode =>
   (getPref('deliveryMode') as DeliveryMode) ?? 'typewriter';
@@ -112,7 +144,7 @@ export const getUsageMode = (): UsageMode => {
   return v === 'always' || v === 'check' ? v : 'off';
 };
 export const setUsageMode = (m: UsageMode): void => setPref('usageMode', m);
-// One-time consent: screen-usage (app names + durations) leaves the device to DeepSeek.
+// One-time consent: screen-usage (app names + durations) leaves the device to the model provider.
 export const getUsageConsent = (): boolean => getPref('usageConsent') === '1';
 export const setUsageConsent = (on: boolean): void => setPref('usageConsent', on ? '1' : '0');
 
@@ -177,6 +209,17 @@ export const getVoiceDailyCap = (): number => {
 };
 export const setVoiceDailyCap = (n: number): void =>
   setPref('voiceDailyCap', String(Math.min(200000, Math.max(1000, n))));
+
+// 真实感 (v3.0) — three switches, all default ON, plus the user's birthday
+// (captured by the perception call, editable in settings).
+export const getPerceptionEnabled = (): boolean => getPref('perception') !== '0';
+export const setPerceptionEnabled = (on: boolean): void => setPref('perception', on ? '1' : '0');
+export const getRhythmEnabled = (): boolean => getPref('rhythm') !== '0';
+export const setRhythmEnabled = (on: boolean): void => setPref('rhythm', on ? '1' : '0');
+export const getTextureEnabled = (): boolean => getPref('texture') !== '0';
+export const setTextureEnabled = (on: boolean): void => setPref('texture', on ? '1' : '0');
+export const getUserBirthday = (): string | null => getPref('userBirthday') || null;
+export const setUserBirthday = (b: string | null): void => setPref('userBirthday', b ?? '');
 
 // 上下文长度 (v2.8): per-turn history budget (estimated tokens) fed to
 // selectWindow — the cost knob. Default HISTORY_BUDGET, clamped

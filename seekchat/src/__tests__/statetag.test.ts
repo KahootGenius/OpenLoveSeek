@@ -4,7 +4,7 @@ describe('extractStateTag', () => {
   it('extracts and strips a complete tag', () => {
     const r = extractStateTag('好啦好啦~\n【状态|心情:开心|强度:0.6|心想:他还挺可爱】');
     expect(r.clean).toBe('好啦好啦~');
-    expect(r.tag).toEqual({ mood: '开心', intensity: 0.6, thought: '他还挺可爱' });
+    expect(r.tag).toEqual({ mood: '开心', intensity: 0.6, thought: '他还挺可爱', agenda: null });
   });
   it('returns null tag when absent', () => {
     expect(extractStateTag('普通回复')).toEqual({
@@ -18,7 +18,7 @@ describe('extractStateTag', () => {
         '【状态|心情:调戏欲旺盛|强度:0.85|心想:这个笨蛋太可爱|主人:立规:以后你在我这的昵称就是呆桃，不许改】',
     );
     expect(r.clean).toBe('对了，你觉得我叫你"桃子"好还是"呆桃"好？');
-    expect(r.tag).toEqual({ mood: '调戏欲旺盛', intensity: 0.85, thought: '这个笨蛋太可爱' });
+    expect(r.tag).toEqual({ mood: '调戏欲旺盛', intensity: 0.85, thought: '这个笨蛋太可爱', agenda: null });
     expect(r.extras).toEqual(['主人:立规:以后你在我这的昵称就是呆桃，不许改']);
   });
   it('strips the envelope even when every field is garbage (colon-less junk drops silently)', () => {
@@ -29,12 +29,12 @@ describe('extractStateTag', () => {
   });
   it('tolerates shuffled field order and fullwidth colons', () => {
     const r = extractStateTag('好【状态|强度：0.4|心情：平静|心想：还行】');
-    expect(r.tag).toEqual({ mood: '平静', intensity: 0.4, thought: '还行' });
+    expect(r.tag).toEqual({ mood: '平静', intensity: 0.4, thought: '还行', agenda: null });
   });
   it('tolerates nested 】 inside a field value', () => {
     const r = extractStateTag('好啦好啦。【状态|心情:开心|强度:0.7|心想:他说【好】就够了】');
     expect(r.clean).toBe('好啦好啦。');
-    expect(r.tag).toEqual({ mood: '开心', intensity: 0.7, thought: '他说【好】就够了' });
+    expect(r.tag).toEqual({ mood: '开心', intensity: 0.7, thought: '他说【好】就够了', agenda: null });
   });
   it('reports found for a present-but-garbage envelope (engine hides it)', () => {
     expect(extractStateTag('嗯【状态|乱写的】').found).toBe(true);

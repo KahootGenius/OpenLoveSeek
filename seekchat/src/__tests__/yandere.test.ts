@@ -49,7 +49,7 @@ describe('buildYanderePromptSection', () => {
     const out = buildYanderePromptSection();
     expect(out).toContain('[病娇:震动]');
     expect(out).toContain('[病娇:锁屏]');
-    expect(out).toContain('低频');
+    expect(out).toMatch(/偶尔|低频/); // the generic 低频 sentence moved to markers.rules (v2.9)
   });
 
   it('warns that narrating 锁屏 does nothing — the real marker must fire (field report)', () => {

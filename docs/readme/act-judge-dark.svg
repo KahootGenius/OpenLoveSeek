@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 446" width="960" height="446" role="img" aria-label="Acting and judging are separate calls: the probe rotates when turn N closes, so turn N+1&#x27;s perception credits the user&#x27;s reaction to lastActed, the variant she actually acted, before she acts again" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" color="#e6edf3" fill="currentColor">
+<title>Acting and judging are separate calls: the probe rotates when turn N closes, so turn N+1&#x27;s perception credits the user&#x27;s reaction to lastActed, the variant she actually acted, before she acts again</title>
+<rect width="960" height="446" fill="#0d1117"/>
+<defs><marker id="actjudge-arr-k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="actjudge-arr-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6ea8e0"/></marker><marker id="actjudge-arr-t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3fb598"/></marker><marker id="actjudge-arr-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f0784a"/></marker></defs>
+<text x="20" y="74" font-size="12" text-anchor="start" fill="currentColor" font-weight="600">User</text>
+<text x="20" y="154" font-size="12" text-anchor="start" fill="currentColor" font-weight="600">Perception call</text>
+<text x="20" y="234" font-size="12" text-anchor="start" fill="currentColor" font-weight="600">Main call</text>
+<text x="20" y="334" font-size="12" text-anchor="start" fill="currentColor" font-weight="600">Style-tree state</text>
+<line x1="140" y1="110" x2="940" y2="110" stroke="currentColor" stroke-width="1" opacity="0.15"/>
+<line x1="140" y1="190" x2="940" y2="190" stroke="currentColor" stroke-width="1" opacity="0.15"/>
+<line x1="140" y1="270" x2="940" y2="270" stroke="currentColor" stroke-width="1" opacity="0.15"/>
+<text x="150" y="30" font-size="10.5" text-anchor="start" fill="currentColor" font-weight="600" opacity="0.65" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">TURN N</text>
+<text x="496" y="30" font-size="10.5" text-anchor="start" fill="currentColor" font-weight="600" opacity="0.65" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">TURN N+1</text>
+<line x1="476" y1="20" x2="476" y2="380" stroke="currentColor" stroke-width="1" opacity="0.5" stroke-dasharray="4 4"/>
+<text x="476" y="396" font-size="10" text-anchor="middle" fill="currentColor" opacity="0.7" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">turn boundary</text>
+<rect x="150" y="205" width="300" height="50" rx="6" stroke="#6ea8e0" stroke-width="2" fill="#6ea8e0" fill-opacity="0.09"/>
+<text x="300" y="226.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Main call (chat model)</text>
+<text x="300" y="242.075" font-size="10.5" text-anchor="middle" fill="currentColor">guide: probe “Takes the lead” · turn 3 of 3</text>
+<polyline points="300,255 300,298" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#actjudge-arr-k)"/>
+<text x="310" y="282" font-size="10" text-anchor="start" fill="currentColor" paint-order="stroke" stroke="#0d1117" stroke-width="5" stroke-linejoin="round">turn closes</text>
+<rect x="150" y="300" width="310" height="62" rx="6" stroke="currentColor" stroke-width="1.2" fill="currentColor" fill-opacity="0.06"/>
+<text x="305" y="319.78" font-size="11" text-anchor="middle" fill="currentColor" font-weight="600">advanceTurn: lastActed = Takes the lead</text>
+<text x="305" y="334.96" font-size="10.5" text-anchor="middle" fill="currentColor">turns 3 ≥ 3 → rotate: probe = Goes along</text>
+<text x="305" y="350.14" font-size="10.5" text-anchor="middle" fill="currentColor">saved to personas.shaping</text>
+<rect x="496" y="45" width="124" height="50" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="558" y="66.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">User replies</text>
+<text x="558" y="82.075" font-size="10" text-anchor="middle" fill="currentColor">after the burst hold</text>
+<polyline points="558,95 558,112 670,112 670,126" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#actjudge-arr-k)"/>
+<text x="678" y="108" font-size="10" text-anchor="start" fill="currentColor" paint-order="stroke" stroke="#0d1117" stroke-width="5" stroke-linejoin="round">opens turn N+1</text>
+<rect x="548" y="128" width="256" height="50" rx="6" stroke="#3fb598" stroke-width="2" fill="#3fb598" fill-opacity="0.09"/>
+<text x="676" y="149.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Perception (utility model)</text>
+<text x="676" y="165.075" font-size="10.5" text-anchor="middle" fill="currentColor">last turn + reply + lastActed ⇒ “likes”</text>
+<polyline points="460,331 500,331 500,153 548,153" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" stroke-dasharray="5 4" marker-end="url(#actjudge-arr-k)"/>
+<text x="508" y="232" font-size="10" text-anchor="start" fill="currentColor" opacity="0.8">lastActed travels</text>
+<text x="508" y="246" font-size="10" text-anchor="start" fill="currentColor" opacity="0.8">with the saved state</text>
+<polyline points="740,178 740,298" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#actjudge-arr-k)"/>
+<text x="732" y="268" font-size="10" text-anchor="end" fill="currentColor" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" paint-order="stroke" stroke="#0d1117" stroke-width="5" stroke-linejoin="round">applyJudgement</text>
+<rect x="548" y="300" width="256" height="62" rx="6" stroke="#f0784a" stroke-width="2" fill="#f0784a" fill-opacity="0.09"/>
+<text x="676" y="320.29" font-size="10.5" text-anchor="middle" fill="currentColor" font-weight="600">“likes” goes to lastActed (Takes the lead),</text>
+<text x="676" y="334.78" font-size="10.5" text-anchor="middle" fill="currentColor">not the rotated probe (Goes along):</text>
+<text x="676" y="349.27" font-size="10.5" text-anchor="middle" fill="currentColor">settled; the probe moves to Affection</text>
+<polyline points="804,331 812,331 812,230 820,230" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#actjudge-arr-k)"/>
+<rect x="820" y="205" width="120" height="50" rx="6" stroke="#6ea8e0" stroke-width="2" fill="#6ea8e0" fill-opacity="0.09"/>
+<text x="880" y="226.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Main call</text>
+<text x="880" y="242.075" font-size="10.5" text-anchor="middle" fill="currentColor">acts “Direct”</text>
+<polyline points="880,255 880,298" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#actjudge-arr-k)"/>
+<rect x="820" y="300" width="120" height="62" rx="6" stroke="currentColor" stroke-width="1.2" fill="currentColor" fill-opacity="0.06"/>
+<text x="880" y="319.78" font-size="11" text-anchor="middle" fill="currentColor" font-weight="600">advanceTurn</text>
+<text x="880" y="334.96" font-size="10.5" text-anchor="middle" fill="currentColor">lastActed = Direct</text>
+<text x="880" y="350.14" font-size="10.5" text-anchor="middle" fill="currentColor">probe: 1 turn</text>
+<line x1="20" y1="410" x2="940" y2="410" stroke="currentColor" stroke-width="1" opacity="0.2"/>
+<text x="20" y="426" font-size="10.5" text-anchor="start" fill="currentColor" opacity="0.8">If perception fails, or on a trigger turn with no user reply, the attitude is dropped and the tree stays put.</text>
+<text x="20" y="441" font-size="10.5" text-anchor="start" fill="currentColor" opacity="0.8">The rotation at the boundary is why lastActed exists: a verdict must land on the variant she actually acted.</text>
+</svg>

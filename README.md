@@ -1,88 +1,238 @@
 # LoveSeek
 
-**A local-first AI companion app powered by DeepSeek.** Design a character, and she chats with you, remembers your history together, keeps her own daily schedule and moods, posts Moments, plays games with you, sends you photos, reads her messages aloud — and sometimes texts you first.
+**An Android AI companion whose characters keep a life of their own.** They follow a daily schedule, carry moods and private thoughts from one message to the next, remember what matters to you, post to a social feed, talk to each other in group chats, and reply when they would actually see your message.
 
-Built with Expo / React Native (Android-focused). The UI is in Simplified Chinese (简体中文). There is no backend, no account, and no telemetry: every message, memory, persona, photo, and voice clip lives on your phone, your API keys live in the system secure keystore, and the only network traffic is direct HTTPS calls to the providers you choose to enable — DeepSeek for chat (required), and optionally fal.ai for photos and MiniMax for voice — each paid for by your own key.
+[![Platform: Android](https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white)](#running-it)
+[![Expo SDK 57](https://img.shields.io/badge/Expo_SDK-57-000020?logo=expo&logoColor=white)](https://docs.expo.dev/versions/v57.0.0/)
+[![React Native 0.86](https://img.shields.io/badge/React_Native-0.86-61DAFB?logo=react&logoColor=black)](https://reactnative.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Tests: 641 passing](https://img.shields.io/badge/tests-641_passing-2EA043)](#running-it)
+[![Built with Claude Code](https://img.shields.io/badge/built_with-Claude_Code-D97757?logo=anthropic&logoColor=white)](#how-it-was-built)
 
-[中文简介见文末](#中文简介)
+LoveSeek is a phone-only app built with Expo and React Native in TypeScript. You bring your own model key (DeepSeek or GLM), and every conversation, memory and setting stays on the device. The app's interface and prompts are in Chinese. This README is in English, and Chinese appears only where it is the literal name of something in the app. Characters are female by default (the persona card also offers a boyfriend), so the text below says "she".
 
-## Features
+> **Who built what.** [KahootGenius](https://github.com/KahootGenius) designed the app, tested it on a real phone build by build, and reported what broke. [Claude Code](https://claude.com/claude-code) wrote all of the code and did the code-level debugging. The details, including which Claude models were involved, are in [How it was built](#how-it-was-built).
 
-**Chat**
-- Token-streaming replies (SSE) with DeepSeek chat, optional thinking mode, and a model picker
-- Long replies are cut into natural multi-message bursts (消息切割) instead of one wall of text
-- Repetition/verbal-tic detection (复读检测) and 变化检测 rut nudges catch the model looping its favorite phrases or reply shapes
-- Long-press any message for a proper action menu — reply, copy, read aloud, delete or recall — where a denied action shows greyed out with the reason instead of silently disappearing
-- Markdown rendering, stickers, mini-games (dice, rock-paper-scissors), in-chat transfers, pats
-- 开启新篇章 — start a fresh context mid-relationship, carrying the last few messages so it doesn't open cold
-- 上下文长度 — a context-budget knob (a number, or 短/中/长 presets) sets how much history each turn sends; a chat inspector shows exactly what she saw
+## Contents
 
-**Characters (人设)**
-- Persona editor with few-shot 示例对话 slots — a *good* example teaches her how to sound, a *bad* one marks what she must never sound like
-- 提示词工作室 (Prompt Studio): every system prompt the app uses lives in an editable registry — nothing is hardcoded away from you
-- Long-term memory: rolling summaries plus explicit extracted memories you can view, edit, and delete right from the chat; deleting a message resets the stored context with it
-- 情绪曲线 (mood curve): time-of-day openness and tone, with slow growth and decaying drift across days
-- A daily life schedule (作息): she's busy at some hours and relaxed at others, and catches you up on what she did while you were away
-- 形象设定 (appearance) and a per-character voice, which feed the photo and voice features below
+- [At a glance](#at-a-glance)
+- [What it does](#what-it-does)
+- [Design](#design): [system layers](#system-layers) · [one DM turn](#one-dm-turn) · [prompt envelope](#the-prompt-envelope) · [realism is state](#realism-is-state) · [perception](#perception-one-cheap-call-per-turn) · [rhythm](#rhythm-replies-on-her-schedule) · [Quick Start](#quick-start-a-persona-that-shapes-herself)
+- [Engineering notes](#engineering-notes)
+- [How it was built](#how-it-was-built)
+- [Repository layout](#repository-layout)
+- [Running it](#running-it)
+- [Sticker packs](#sticker-packs)
+- [Further reading](#further-reading)
+- [License](#license)
+- [中文简介](#中文简介)
 
-**Photos (照片)** — optional, bring your own [fal.ai](https://fal.ai) key
-- From a written appearance, the app generates three frozen Seedream reference portraits (redo or freeze each one) so she looks the same in every picture
-- She decides when to send a photo mid-chat: a selfie conditioned on her reference set, or a 实拍 shot of what she's looking at (food, scenery, the cat) with no one in frame
-- Pending / failed / retry bubbles, and a daily per-conversation cap you set
+## At a glance
 
-**Voice (语音)** — optional, bring your own [MiniMax](https://platform.minimax.io) key
-- Tap any of her messages to hear it, or turn on auto-play while the chat is in the foreground; message bursts queue in order
-- Her tone follows her current mood; Global and 国内 regions; one default voice plus per-character voice IDs
-- A daily character cap, a per-message audio cache, and stage directions in （brackets） skipped by default — setup walkthrough in [`seekchat/VOICE.md`](seekchat/VOICE.md)
+| | |
+|---|---|
+| **Platform** | Android, installed as a sideloaded APK. Expo SDK 57, React Native 0.86, TypeScript |
+| **Models** | Bring your own keys: DeepSeek or GLM (Zhipu) for chat, fal.ai Seedream for photos, MiniMax for voice |
+| **Data** | On the device only: SQLite (schema v20), API keys in SecureStore. No server, no account, no telemetry |
+| **Size** | About 18,000 lines of app TypeScript, 5,400 lines of tests, and a small Kotlin native module |
+| **Tests** | 50 Jest suites, 641 tests, all passing |
+| **History** | v1.0 to v3.0, July to September 2026 |
 
-**Community**
-- 朋友圈 (Moments): characters author their own posts, like and comment on yours, and reply to your comments; diary entries feed their inner life
-- Group chat: multiple characters in one room, a lightweight "director" call decides who speaks, and @-mentions (with a picker) guarantee a reply
-- Group hierarchy: Owner > Admin > Member with rank-checked 禁言 / 撤回 / 公告 / 群笔记 actions; an owner character can appoint or dismiss admins, remove members, and hand ownership back to you — every action lands as a system line in the transcript
-- 群红包 red packets, named typing indicators, join/leave reactions, group avatars — and what happens in the group carries home into each 1:1 relationship
+## What it does
 
-**Proactive**
-- 主动消息 (outreach): the app pre-writes a few of her messages and hands them to the OS as scheduled notifications, so she can text you first even on Chinese ROMs that freeze apps in the background
+**Characters with a life**
+- A persona can carry a daily schedule, interests, a mood that decays toward its baseline, and a mood curve across the day. A hidden state tag in every reply lets the character update her own mood, a private thought, and something she wants to bring up later.
+- She can speak first. Background JavaScript is unreliable on the de-Googled test phone, so proactive messages are written ahead of time and handed to the OS notification scheduler, and the app folds them into the chat when it opens.
+- Every day gets two or three small generated events, so what she mentions at 10 a.m. still holds at 8 p.m. Holidays and the user's birthday come up on their own.
 
-**Special modes** — off by default, per character, consent-gated
-- 病娇 (yandere) mode: a character written as jealous or clingy can occasionally act it out on the device — a short vibration, a "don't go" banner, a full-screen in-app lock, a phrase she demands you type before leaving, and asking her permission before you go back to the chat list
-- Master mode: a dominance/obedience layer for consenting adult roleplay — the character sets her own honorific and up to eight rules, issues commands you acknowledge with a tap, sets a reply countdown, and keeps a 0–100 "discipline" score; its device-level actions are the same set as yandere mode
+**Texting that feels real (v3.0)**
+- Read receipts appear when her schedule says she would look at her phone. At work she sends one short "busy, talk later" line and the real reply arrives when her slot ends. At night it arrives after she wakes.
+- Long replies arrive as a burst of separate bubbles. A casual reply can be one word, a sticker or a voice note. Now and then she makes a typo and corrects it, unsends a message, or quotes something you said earlier.
+- If she asked a question and you went quiet with the chat open, she nudges you once.
 
-Both are disabled for every character until you switch them on in that character's editor, and each switch opens its own consent dialog with a tick box and a five-second countdown before 确认 unlocks. Neither can be turned on by the model, and neither is enabled by default anywhere. What makes them safe to try:
-- **Every action is an in-app overlay.** The app declares no overlay, device-admin, or accessibility permissions. The lock screen uses the phone's own biometric/PIN prompt via `expo-local-authentication` and unlocks immediately if none is enrolled. The Android home button is never intercepted — you can always leave the app — and the demand screen says so on-screen.
-- **Hard caps live in code, not in the prompt.** The lock fires at most once per cooldown (30 minutes by default, adjustable per character), the "don't go" banner clears itself after 90 seconds, reply countdowns are clamped to 3–120 seconds, and a lock the character merely *narrates* does nothing — only an exact marker on its own line counts.
-- **Nothing extra leaves the device.** These modes send no additional data anywhere; they only interpret markers in a reply DeepSeek has already returned.
-- **Off is one switch away**, and the setting applies only to the character you enabled it on.
+**Memory**
+- A sliding window of recent history plus a rolling summary of everything older, with an inspector that shows exactly what the next request will send.
+- A memory vault of facts about the user, dated follow-ups ("how did Friday's interview go?"), and a slowly moving closeness score.
 
-**Data & safety**
-- Full export/import backups (zip); an automatic safety export is written before any restore
-- Biometric app lock
-- Daily API usage counter, temperature presets, and separate daily caps for photos and voice
-- Settings grouped into API Keys / 聊天 / 照片 / 语音 sections
+**Quick Start personas (v2.9)**
+- Four fields (role, name, gender, age) produce a one-line persona. The character then grows her own personality in the chat. She tries styles from a decision tree while a separate call reads how the user reacts, keeping what lands and dropping what doesn't. She can name herself and set her own schedule.
 
-## How it works
+**Community (v2)**
+- Moments (朋友圈): the user posts text and pictures, and characters like, comment and post their own.
+- Group chats with several characters. A director picks who speaks, @mentions always get an answer, and groups have owners, admins and red packets.
 
-LoveSeek is a pure client. You bring your own DeepSeek API key (get one at [platform.deepseek.com](https://platform.deepseek.com)), enter it in 设置 (Settings), and it is stored with `expo-secure-store`. Photos and voice are off by default; each turns on only after you add a fal.ai or MiniMax key of your own, stored the same way, and each calls its provider directly from the device. All prompt assembly — persona, memories, mood, schedule, examples — happens on-device; deterministic rules (caps, throttles, marker parsing, permission checks) are enforced in code rather than trusted to the model.
+**Media and play**
+- Selfies and scene photos through fal.ai Seedream, anchored to frozen reference images so her face stays consistent. Voice through MiniMax text-to-speech. Stickers, GIFs, mini-games and virtual money transfers.
 
-## Getting started
+**Control and transparency**
+- Prompt Studio keeps every instructional prompt in one registry that can be overridden inside the app. Developer mode narrates each turn's hidden decisions as meta lines. There is a daily API call counter, backup export and import, and a biometric app lock.
 
-Requirements: Node 20+, npm.
+## Design
+
+The principle behind v3.0: **realism comes from state and rhythm, not from more prompt rules.** Most of what makes a character feel alive is deterministic code around a single cheap model call.
+
+### System layers
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/architecture-dark.svg">
+  <img alt="System layers. UI screens call an orchestration layer that owns every side effect. Orchestration uses pure, unit-tested logic modules, the provider clients for DeepSeek, GLM, fal.ai and MiniMax, and on-device storage." src="docs/readme/architecture-light.svg">
+</picture>
+
+Only the orchestration layer has side effects. The pure-logic modules take data and return data, which is why nearly all behavior is unit-tested without a phone. The provider clients make the only network calls. Every module v3.0 added landed in the pure layer; orchestration only gained wiring.
+
+### One DM turn
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/turn-dark.svg">
+  <img alt="One DM turn in twelve stages: burst hold, perception, her day, compose, rhythm check, main call, marker repair, extract, cut and typo, persist, wrap-up, summarize. Busy or asleep turns branch to deferred delivery." src="docs/readme/turn-light.svg">
+</picture>
+
+A turn makes exactly one chat-model call and one perception call. Every other model call is conditional: once a day, only when a marker is broken, only for long replies, only when history outgrows the window. Those utility calls use the selected provider's cheapest model with thinking switched off, so the cost of a turn has a ceiling you can read off this diagram.
+
+### The prompt envelope
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/envelope-dark.svg">
+  <img alt="The prompt envelope. The first system message holds instruction lanes in precedence order, with the core rules above the persona. The second system message holds model-written state, fenced as reference data. The history window follows." src="docs/readme/envelope-light.svg">
+</picture>
+
+Instructions and evidence travel in separate system messages. Instruction lanes are ordered by precedence. The core rules (read the mood, choose a length, decide content and attitude, check facts) come before the user-written persona, so a long persona cannot out-vote them. Everything the model wrote earlier, such as its state, summaries and memories, rides as fenced evidence: data, never instructions, and never proof of a fact about the user.
+
+### Realism is state
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/state-loop-dark.svg">
+  <img alt="The state loop. Hidden channels in her reply and code-side writers update the conversations, personas, messages, memories and scheduled-message stores. The next turn reads them back as the state block, the style guide, the memory block and the chat screen." src="docs/readme/state-loop-light.svg">
+</picture>
+
+Every hidden channel uses one grammar: a marker on its own line, invisible to the user, read by strict parsers, linted for near-misses, and repaired by a format-only call when the syntax breaks. Whatever the channels write lands in SQLite and comes back next turn as evidence. Code writes into the same stores without any markers.
+
+### Perception: one cheap call per turn
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/perception-dark.svg">
+  <img alt="Perception. Her last turn, the user's new messages, known memories, today's date and the style-tree state go into one utility call. Its JSON fields set the temperature and the length line, and update the state block, memory vault, follow-ups, closeness score, birthday and Quick Start state." src="docs/readme/perception-light.svg">
+</picture>
+
+v3.0 folded two earlier calls into this one. Before the character speaks, a utility model reads her last turn and the user's new messages and returns one line of JSON. Each field degrades on its own to "no verdict", so a malformed answer costs only that field.
+
+### Rhythm: replies on her schedule
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/rhythm-dark.svg">
+  <img alt="Rhythm. With a schedule, her current activity decides between an ordinary reply, one short busy line now with the full reply at the end of her slot, or silence until she wakes. A worked day shows a 1 a.m. message answered at 7:12, and a 2 p.m. message answered briefly at once and fully at 6 p.m." src="docs/readme/rhythm-light.svg">
+</picture>
+
+The full reply is written the moment the user sends and delivered later. The scheduled-message store and an OS notification bring it into the chat on time, even if the app is closed.
+
+### Quick Start: a persona that shapes herself
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/shaping-tree-dark.svg">
+  <img alt="The Quick Start style tree: tone, clinginess, initiative, affection and nagging, probed in order. In this example, tone and clinginess are settled, initiative is being probed with the variant Takes the lead, and the rest are open." src="docs/readme/shaping-tree-light.svg">
+</picture>
+
+Code, not the model, decides which style she tries next. She only acts the current variant, and the perception call judges the user's reaction at the start of the next turn.
+
+<details>
+<summary><b>How one style dimension settles, and why the state remembers what she acted</b></summary>
+<br>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/shaping-lifecycle-dark.svg">
+  <img alt="Lifecycle of one style dimension. A liked variant settles, a disliked one is excluded, one remaining candidate settles automatically, none remaining skips, and three turns without a verdict rotate to an untried variant." src="docs/readme/shaping-lifecycle-light.svg">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/act-judge-dark.svg">
+  <img alt="Acting and judging across turns. The probe rotates when turn N closes, so turn N+1's perception credits the user's reaction to lastActed, the variant she actually acted, before she acts again." src="docs/readme/act-judge-light.svg">
+</picture>
+
+</details>
+
+## Engineering notes
+
+- **Zero-trust helper calls.** The message cutter may only insert separators, and its output must re-join to the original text character for character, so it can never rewrite her words. The marker-repair call may fix format only. Anything that looks like a rewrite is rejected and the original kept.
+- **Deterministic before generative.** Typos come from an injectable random source, so tests can seed it. Bracket and tag variants are normalized in code, and the verbal-tic detector is a pure function. None of these spend a model call.
+- **Cost ceilings by construction.** One perception call per turn, utility models that never think, a daily photo cap per conversation, a reply-chain cap in group chats, and a daily API call counter per provider.
+- **One client, two providers.** DeepSeek and GLM share one streaming client. Their differences (endpoints by region, a per-model thinking policy, temperature ceilings, error codes) live in one pure module with its own tests.
+- **Android realities.** Proactive messages are pre-written and scheduled as OS notifications. A small Kotlin module provides a keep-alive service and usage-stats access. Android's three-button `Alert` limit was replaced by a custom long-press menu.
+- **Data safety.** Twenty idempotent SQLite migrations install over any older build without losing chats. Import validates a backup and exports a safety copy before restoring. Keys stay in SecureStore and never enter backups.
+
+## How it was built
+
+LoveSeek is the work of one person and an AI coding agent, with a clear split of responsibilities.
+
+| | KahootGenius | Claude Code |
+|---|---|---|
+| **Role** | Design, testing, reporting | Coding, code-level debugging |
+| **In practice** | Conceived the app and its features, made the design calls, approved each spec before work began, tested the builds on a real Android phone, and reported what broke with the symptoms seen | Wrote all of the application code (TypeScript and the Kotlin module) and its 641 unit tests, traced field reports to their causes in the code and fixed them, ran review passes, and built the APKs. It also wrote up a design spec and an implementation plan for each wave from KahootGenius's direction |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/workflow-dark.svg">
+  <img alt="How it was built. KahootGenius asks for a feature or reports a bug, Claude Code assesses and recommends, KahootGenius decides, Claude Code builds and verifies through spec, plan, test-driven code, review and an APK, and KahootGenius tests the APK on a phone. Then the loop repeats." src="docs/readme/workflow-light.svg">
+</picture>
+
+**Models.** Claude Code ran on four Claude models over the project: **Claude Fable 5** and **Claude Opus 4.8** for v1.0 to v2.7 (July 2026), **Claude Fable 5.1** for v2.8 to v3.0 (September 2026), and **Claude Opus 5.5** for this README and its diagrams (October 2026). Commits carry a `Co-Authored-By` trailer naming the model that wrote them. Each wave followed the same loop of spec, plan, test-driven implementation and review, using the Superpowers workflow skills for Claude Code, which is why every wave has a written spec and plan.
+
+**Design calls on the record.** Each wave's design spec logs who decided what. A few of KahootGenius's calls:
+
+- The brief itself: a phone-only chat app with permanent local history that doubles as a hands-on study of LLM API calls and context management.
+- Cutting long replies into message bursts with a separate tiny call, so the main prompt carries no extra duties.
+- Quick Start: a persona that grows her own personality by trying styles like a decision tree and reading the user's attitude, with acting and judging as separate calls.
+- GLM as a second chat provider the user can switch to freely.
+- Asking for conversations that feel more real and lively, then approving the seven-part v3.0 plan.
+- Scope and cost calls, such as photos before video, a daily photo cap, and that handing a group's ownership to a character is final.
+
+**Field reports that became fixes.** KahootGenius saw these on the phone, and Claude Code traced each one to its cause in the code.
+
+| Seen on the phone | Cause found in the code | Fix | Version |
+|---|---|---|---|
+| Messages in a burst sometimes appeared out of order | The first chunk was timestamped at insert time while later chunks used a value captured earlier, and ties were broken by a random UUID | Explicit, increasing timestamps for every chunk; ties broken by SQLite insertion order | v2.8 |
+| "Recall" was missing from long-press menus in group chats | Android's `Alert.alert` silently drops every button after the third | A custom long-press menu with no row limit; unavailable actions show as disabled, with a reason | v2.8 |
+| The hidden mood tag leaked into a visible bubble | The model wrote the tag with half-width brackets, which the strict parser missed | Bracket variants normalized in code before parsing | v2.2.1 |
+| Long chats kept opening replies with the same phrase | Her own past replies, re-sent every turn, reinforced the habit | A deterministic repeat detector with a one-line nudge, plus "start a new chapter" | v2.3 |
+| Casual replies ran long and key rules were ignored | Up to sixteen unranked rule sections, with the length rule reaching only some personas | A short top-priority core-rules block and a per-turn length line | v2.9 |
+| The first GLM request was rejected: "this model always uses think mode" | GLM-5.3 models cannot switch thinking off | A per-model thinking policy; utility calls moved to a model that can turn it off | v2.9 |
+
+## Repository layout
+
+```text
+seekchat/                       the Expo app
+├── src/app/                    screens (Expo Router)
+├── src/components/             shared UI
+├── src/lib/                    orchestration and pure logic
+├── src/__tests__/              Jest suites
+├── modules/loveseek-native/    Kotlin Expo module: keep-alive service, usage stats
+├── scripts/build-apk.sh        local signed APK build
+└── BUILD.md · PROVIDERS.md · VOICE.md
+docs/
+└── readme/                     the diagrams in this README
+tools/
+├── readme-diagrams/            generator for those diagrams (Python, standard library only)
+└── sticker-packer.html         sticker pack builder
+```
+
+## Running it
+
+You need Node.js 20 or newer. Native builds also need the Android SDK and JDK 21; [seekchat/BUILD.md](seekchat/BUILD.md) has the details.
 
 ```bash
 cd seekchat
 npm install
-npx expo start
+npx expo start          # run in a development build; Expo Go covers most screens
+npm test                # 50 Jest suites, 641 tests
+npx tsc --noEmit        # typecheck
+npx expo run:android    # build and install a debug build on a connected device
 ```
 
-Most features work in Expo Go; the custom keep-alive native module requires a development build or an APK. To build an installable APK with your own Expo account and keystore, see [`seekchat/BUILD.md`](seekchat/BUILD.md):
+Expo Go runs most of the app, but the keep-alive service, usage stats and scheduled replies need a development build or the APK. `npm run build:apk` builds a signed APK into `seekchat/dist/` with your own Expo account and Android keystore. [seekchat/BUILD.md](seekchat/BUILD.md) covers the one-time setup.
 
-```bash
-npm run build:apk
-```
+In the app, open 设置 (Settings), then API Keys. Choose DeepSeek or GLM under 模型服务商 (model provider), paste a key and tap 测试连接 (test connection). Photos need a fal.ai key and voice needs a MiniMax key. Keys are stored in SecureStore and sent only to their own provider.
 
 ## Sticker packs
 
-Characters can send stickers from packs you import as a zip: images plus a `stickers.json` manifest —
+Characters can send stickers from packs you import as a zip: images plus a `stickers.json` manifest.
 
 ```json
 [
@@ -90,44 +240,34 @@ Characters can send stickers from packs you import as a zip: images plus a `stic
 ]
 ```
 
-`label` (≤20 chars) is what the model "sends"; `desc` tells it when the sticker fits. [`tools/sticker-packer.html`](tools/sticker-packer.html) is a standalone drag-and-drop pack builder that runs in your browser — no install needed.
+`label` (up to 20 characters) is what the model "sends", and `desc` tells it when the sticker fits. [tools/sticker-packer.html](tools/sticker-packer.html) builds a pack in the browser by drag and drop, with nothing to install.
 
-## Project structure
+## Further reading
 
-```
-seekchat/                     the Expo app
-  src/app/                    screens (expo-router file routing)
-  src/components/             shared UI — message menu, reference gallery, chat inspector, …
-  src/lib/                    logic modules — pure functions where possible
-  src/__tests__/              jest test suites
-  modules/loveseek-native/    Android keep-alive native module (Kotlin)
-  scripts/                    local APK build + API smoke test
-  VOICE.md                    MiniMax voice setup guide
-tools/sticker-packer.html     browser-based sticker pack builder
-```
+- [seekchat/PROVIDERS.md](seekchat/PROVIDERS.md): choosing between DeepSeek and GLM, keys and regions, troubleshooting
+- [seekchat/VOICE.md](seekchat/VOICE.md): setting up MiniMax voice
+- [seekchat/BUILD.md](seekchat/BUILD.md): local APK builds and signing
 
-## Tests
+The diagrams are generated by `python3 tools/readme-diagrams/build.py`, which writes a light and a dark SVG for each figure into `docs/readme/`.
 
-```bash
-cd seekchat
-npm test
-```
+## License
 
-## License & disclaimers
+MIT, see [LICENSE](LICENSE).
 
-MIT — see [LICENSE](LICENSE).
-
-LoveSeek is an independent project, not affiliated with or endorsed by DeepSeek, fal.ai, ByteDance (Seedream), or MiniMax. You use your own API keys and pay for your own usage. Companion characters are roleplay driven by a language model — enjoy them for what they are.
+LoveSeek is an independent project, not affiliated with or endorsed by DeepSeek, Zhipu AI (GLM), fal.ai, ByteDance (Seedream) or MiniMax. You use your own API keys and pay for your own usage. The characters are role-play driven by a language model; enjoy them for what they are.
 
 ---
 
 ## 中文简介
 
-LoveSeek 是一个**本地优先**的 AI 陪伴应用，基于 DeepSeek API，用 Expo / React Native 构建（面向 Android）。
+LoveSeek 是一个**本地优先**的 Android AI 陪伴应用，用 Expo / React Native（TypeScript）构建，界面为简体中文。
 
-- **无服务器、无账号、无数据上报**：聊天记录、记忆、人设、照片、语音全部存在手机本地；API Key 存在系统安全存储；网络请求只直连你自己启用的服务商——DeepSeek（聊天，必需），以及可选的 fal.ai（照片）与 MiniMax（语音）。
-- **功能**：人设与提示词工作室、示例对话（好例/坏例）、长期记忆与滚动总结、情绪曲线与作息、朋友圈与角色日记、群聊（群主/管理员/成员体系，禁言/撤回/公告/群笔记，群红包，@提及）、主动消息（利用系统定时通知绕过后台冻结）、Seedream 照片（自拍与实拍）、MiniMax 语音朗读、消息切割与复读/变化检测、长按消息菜单、上下文长度调节、表情包、小游戏、转账与拍一拍、备份导出/导入、生物识别应用锁、用量计数等。
-- **特殊模式（可选）**：病娇模式与主人模式默认关闭，需在单个角色的编辑页手动开启并勾选确认（5 秒倒计时）。所有"越界"行为都只是应用内的遮罩——震动、需指纹/密码解开的锁定画面、挽留横幅、索求打字画面；应用不申请悬浮窗、设备管理或无障碍权限，Home 键随时可退出，锁屏有冷却时间、挽留 90 秒自动解除，也不会额外上传任何数据。
-- **上手**：`cd seekchat && npm install && npx expo start`，在设置中填入你自己的 DeepSeek API Key（[platform.deepseek.com](https://platform.deepseek.com) 申请）；照片与语音为可选功能，分别需要你自己的 fal.ai 与 MiniMax Key。打包 APK 见 [`seekchat/BUILD.md`](seekchat/BUILD.md)，语音设置见 [`seekchat/VOICE.md`](seekchat/VOICE.md)。
+- **无服务器、无账号、无数据上报**：聊天记录、记忆、人设、照片、语音都只存在手机上；API Key 存在系统安全存储，请求只直连你自己启用的服务商。
+- **模型服务商**：聊天可选 DeepSeek 或智谱 GLM（自备 Key）；照片（fal.ai Seedream）与语音（MiniMax）均为可选。
+- **真实感**：作息与心情、每天生成的生活小事、按作息出现的已读、忙碌时先回一句"在忙"、睡着时醒来再回、偶尔打错字再更正、撤回与引用、语音消息、节日与生日。
+- **记忆与关系**：滚动总结、记忆库、到期跟进、亲密度。
+- **立即开始**：填四项基本信息，角色会在聊天中按风格决策树试探你的喜好，逐步长成你喜欢的样子。
+- **社区**：朋友圈、多角色群聊（群主 / 管理员 / 成员、群红包、@提及）。
+- **上手**：`cd seekchat && npm install && npx expo start`，然后在 设置 → API Keys 选择服务商并填入 Key。打包 APK 见 [seekchat/BUILD.md](seekchat/BUILD.md)。
 
-本项目与 DeepSeek、fal.ai、MiniMax 官方无关；MIT 协议开源。
+由 KahootGenius 负责设计、测试与问题反馈，代码由 Claude Code 编写与调试。MIT 协议开源；与 DeepSeek、智谱、fal.ai、字节跳动、MiniMax 官方无关。

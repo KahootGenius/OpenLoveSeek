@@ -1,12 +1,13 @@
 import * as SQLite from 'expo-sqlite';
 import * as Crypto from 'expo-crypto';
 import type {
-  Character, Conversation, GroupRole, MemoryEntry, Message, MessageKind, MessageStatus, Persona,
-  Post, Reaction, RefImage, Role, Sticker,
+  Character, Conversation, GroupRole, MemoryEntry, Message, MessageKind, MessageStatus, Persona, Post, Provider, Reaction, RefImage, Role, Sticker,
 } from './types';
 import { NEW_CHAT_TITLE, SEED_PERSONA } from './constants';
 import { bindPromptStore } from './prompts';
-import { bindApiCounter } from './deepseek';
+import { bindApiCounter } from './llm';
+import { buildQuickPrompt, initialShaping, quickPersonaName } from './shaping';
+import type { QuickBasics } from './shaping';
 import { isDeletableMessageKind, mustClearSummaryOnDeletion } from './message-deletion';
 
 export const db = SQLite.openDatabaseSync('seekchat.db');
@@ -330,6 +331,37 @@ export function migrate(): void {
     db.execSync('PRAGMA user_version = 18');
     v = 18;
   }
+  if (v < 19) {
+    // v2.9 立即开始: JSON ShapingState (shaping.ts) while she shapes herself
+    // in-chat; null = ordinary persona.
+    try {
+      db.execSync('ALTER TABLE personas ADD COLUMN shaping TEXT');
+    } catch {
+      // column already exists from an interrupted earlier run
+    }
+    db.execSync('PRAGMA user_version = 19');
+    v = 19;
+  }
+  if (v < 20) {
+    // v3.0 真实感: her agenda (想聊) + a slow 亲密度 on the conversation, time-bound
+    // memory follow-ups, 已读 stamps on user messages, and the persona's
+    // generated day. All nullable — installs over v19 untouched.
+    for (const sql of [
+      'ALTER TABLE conversations ADD COLUMN agenda TEXT',
+      'ALTER TABLE conversations ADD COLUMN closeness INTEGER',
+      'ALTER TABLE memories ADD COLUMN followUpAt INTEGER',
+      'ALTER TABLE messages ADD COLUMN readAt INTEGER',
+      'ALTER TABLE personas ADD COLUMN dayLog TEXT',
+    ]) {
+      try {
+        db.execSync(sql);
+      } catch {
+        // column already exists from an interrupted earlier run
+      }
+    }
+    db.execSync('PRAGMA user_version = 20');
+    v = 20;
+  }
   const tables = db.getAllSync<{ name: string }>(
     "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
   );
@@ -353,7 +385,8 @@ export function createPersona(
   const t = now();
   const p: Persona = {
     id: uuid(), name, systemPrompt, summaryPrompt, avatarUri, proConfig,
-    appearancePrompt: null, refsFrozen: 0, voiceId: null, createdAt: t, updatedAt: t,
+    appearancePrompt: null, refsFrozen: 0, voiceId: null, shaping: null, dayLog: null,
+    createdAt: t, updatedAt: t,
   };
   db.runSync(
     'INSERT INTO personas (id, name, systemPrompt, summaryPrompt, avatarUri, proConfig, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)',
@@ -402,6 +435,52 @@ export const setPersonaRefsFrozen = (id: string, frozen: number): void =>
 // global default (settings.ts's getVoiceId()).
 export const setPersonaVoiceId = (id: string, voiceId: string | null): void =>
   void db.runSync('UPDATE personas SET voiceId=? WHERE id=?', [voiceId, id]);
+
+// 立即开始 (schema v19): the shaping state she rewrites every turn, plus the
+// two persona fields her markers may change — her own name and the life
+// config (作息/兴趣) that the persona editor also edits.
+export const setPersonaShaping = (id: string, json: string | null): void =>
+  void db.runSync('UPDATE personas SET shaping=?, updatedAt=? WHERE id=?', [json, now(), id]);
+
+export const renamePersona = (id: string, name: string): void =>
+  void db.runSync('UPDATE personas SET name=?, updatedAt=? WHERE id=?', [name, now(), id]);
+
+export const setPersonaProConfig = (id: string, json: string | null): void =>
+  void db.runSync('UPDATE personas SET proConfig=?, updatedAt=? WHERE id=?', [json, now(), id]);
+
+// v3.0 真实感 setters.
+export const setPersonaDayLog = (id: string, json: string | null): void =>
+  void db.runSync('UPDATE personas SET dayLog=? WHERE id=?', [json, id]);
+
+export const setConversationAgenda = (id: string, agenda: string | null): void =>
+  void db.runSync('UPDATE conversations SET agenda=? WHERE id=?', [agenda, id]);
+
+export const setConversationCloseness = (id: string, closeness: number): void =>
+  void db.runSync('UPDATE conversations SET closeness=? WHERE id=?', [closeness, id]);
+
+export const setMemoryFollowUp = (id: string, followUpAt: number | null): void =>
+  void db.runSync('UPDATE memories SET followUpAt=? WHERE id=?', [followUpAt, id]);
+
+export const setMessageReadAt = (id: string, readAt: number | null): void =>
+  void db.runSync('UPDATE messages SET readAt=? WHERE id=?', [readAt, id]);
+
+export const setPersonaSystemPrompt = (id: string, systemPrompt: string): void =>
+  void db.runSync('UPDATE personas SET systemPrompt=?, updatedAt=? WHERE id=?', [
+    systemPrompt, now(), id,
+  ]);
+
+/** 立即开始: the card's basics → a one-line persona in shaping mode plus her
+ *  home chat. Everything else (life, style, a name if none was given) she
+ *  writes herself in that chat. */
+export function createQuickPersona(
+  basics: QuickBasics,
+): { persona: Persona; conversation: Conversation } {
+  const p = createPersona(quickPersonaName(basics), buildQuickPrompt(basics), null, null, null);
+  const shaping = JSON.stringify(initialShaping(!!basics.name?.trim()));
+  setPersonaShaping(p.id, shaping);
+  const conversation = createConversation(p.id);
+  return { persona: { ...p, shaping }, conversation };
+}
 
 // ---- ref_images (v2.6 照片 — 3 frozen slots per persona) ----
 export const listRefImages = (personaId: string): RefImage[] =>
@@ -584,7 +663,7 @@ export function createConversation(personaId: string): Conversation {
     lifeEnabled: 0, memoryEnabled: 1, moodLabel: null, moodIntensity: null,
     moodUpdatedAt: null, currentThought: null, curveDrift: null, discipline: null,
     masterHonorific: null, masterRules: null, charBalance: null, avatarUri: null,
-    kind: 'dm', groupConfig: null,
+    kind: 'dm', groupConfig: null, agenda: null, closeness: null,
     createdAt: t, updatedAt: t,
   };
   db.runSync(
@@ -862,14 +941,15 @@ export function insertMessage(
   createdAt?: number, // scheduled-outreach ingestion backdates to delivery time
   quotedId: string | null = null, // 引用 target
   speakerId: string | null = null, // group speaker (v2.2)
+  readAt: number | null = null, // 已读 (v3.0): when she "reads" a user message
 ): Message {
   const m: Message = {
     id: uuid(), conversationId, role, content, status, kind, reasoning, quotedId, speakerId,
-    createdAt: createdAt ?? now(),
+    readAt, createdAt: createdAt ?? now(),
   };
   db.runSync(
-    'INSERT INTO messages (id, conversationId, role, content, status, kind, reasoning, quotedId, speakerId, createdAt) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    [m.id, m.conversationId, m.role, m.content, m.status, m.kind, m.reasoning, m.quotedId, m.speakerId, m.createdAt],
+    'INSERT INTO messages (id, conversationId, role, content, status, kind, reasoning, quotedId, speakerId, readAt, createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    [m.id, m.conversationId, m.role, m.content, m.status, m.kind, m.reasoning, m.quotedId, m.speakerId, m.readAt ?? null, m.createdAt],
   );
   return m;
 }
@@ -932,11 +1012,15 @@ export const listMemories = (conversationId: string): MemoryEntry[] =>
     [conversationId],
   );
 
-export function insertMemory(conversationId: string, text: string): MemoryEntry {
-  const m: MemoryEntry = { id: uuid(), conversationId, text, createdAt: now() };
+export function insertMemory(
+  conversationId: string,
+  text: string,
+  followUpAt: number | null = null, // 跟进 (v3.0): when she should bring it up
+): MemoryEntry {
+  const m: MemoryEntry = { id: uuid(), conversationId, text, followUpAt, createdAt: now() };
   db.runSync(
-    'INSERT INTO memories (id, conversationId, text, createdAt) VALUES (?,?,?,?)',
-    [m.id, m.conversationId, m.text, m.createdAt],
+    'INSERT INTO memories (id, conversationId, text, followUpAt, createdAt) VALUES (?,?,?,?,?)',
+    [m.id, m.conversationId, m.text, m.followUpAt ?? null, m.createdAt],
   );
   return m;
 }
@@ -977,11 +1061,20 @@ export const setPref = (key: string, value: string): void =>
 // prefs storage is bound here, at first db import — before any screen renders.
 bindPromptStore({ get: getPref, set: setPref });
 
-// API 用量计数 (v2.3): every streamChat/chatOnce bumps today's pref counter.
-bindApiCounter(() => {
-  const d = new Date();
-  const k = `api.${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(
+// API 用量计数 (v2.3; split per provider v2.9): every streamChat/chatOnce
+// bumps today's total (`api.<date>`, the pre-v2.9 key — old days stay
+// readable) AND the calling provider's own counter (`api.<date>.<provider>`).
+export const apiDayKey = (d = new Date()): string =>
+  `api.${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(
     d.getDate(),
   ).padStart(2, '0')}`;
-  setPref(k, String((parseInt(getPref(k) ?? '0', 10) || 0) + 1));
+export const apiCallsToday = (provider?: Provider): number => {
+  const k = provider ? `${apiDayKey()}.${provider}` : apiDayKey();
+  return parseInt(getPref(k) ?? '0', 10) || 0;
+};
+bindApiCounter((provider) => {
+  const day = apiDayKey();
+  const bump = (k: string) => setPref(k, String((parseInt(getPref(k) ?? '0', 10) || 0) + 1));
+  bump(day);
+  bump(`${day}.${provider}`);
 });

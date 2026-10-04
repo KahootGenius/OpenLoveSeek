@@ -84,7 +84,7 @@ export function ChatInspector(props: {
                 <Text style={s.lifeTitle}>生活（Life）</Text>
                 <Text style={s.lifeNotice}>
                   ⚠ 开启后：主动消息会产生额外 API 请求，注入的状态上下文也会增加每次请求的
-                  token 用量，请留意 DeepSeek 余额。
+                  token 用量，请留意模型服务商余额。
                 </Text>
               </View>
               <Switch

@@ -20,9 +20,9 @@ import {
   buildDirectorPrompt, buildReactorPrompt, experienceNote, parseDirectorPicks,
   postImageDescs, revealDelayMs, visibleTo,
 } from './moments';
-import { chatOnce } from './deepseek';
-import { getApiKey, getModel, getTemperature } from './settings';
-import { SUMMARIZER_MODEL } from './constants';
+import { chatOnce } from './llm';
+import { dayEventsLine, parseDayLog } from './dayseed';
+import { getApiKey, getModel, getSummarizerModel, getTemperature } from './settings';
 import { extractMemoryMarkers } from './memory';
 import { extractStateTag } from './statetag';
 import { logMeta, notifyConversation } from './engine';
@@ -76,7 +76,7 @@ export async function publishPost(post: Post): Promise<void> {
     const cands = allowedCharacters(post);
     if (cands.length === 0) return;
     const personaName = (c: Character) => getPersona(c.personaId)?.name ?? '她';
-    const dirRaw = await chatOnce(apiKey, SUMMARIZER_MODEL, [
+    const dirRaw = await chatOnce(apiKey, getSummarizerModel(), [
       {
         role: 'user',
         content: buildDirectorPrompt(
@@ -177,7 +177,10 @@ export async function maybeCharPosts(): Promise<void> {
             role: 'system',
             content:
               `${persona.systemPrompt}\n\n${soulContextFor(ch)}\n\n` +
-              renderPrompt('moments.charpost', { activity }),
+              renderPrompt('moments.charpost', {
+                activity,
+                today: dayEventsLine(parseDayLog(persona.dayLog), new Date()) ?? '',
+              }),
           },
           { role: 'user', content: '（写下你的动态）' },
         ], getTemperature());

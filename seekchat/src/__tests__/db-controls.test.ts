@@ -14,6 +14,8 @@ const {
   setGroupMemberRole, setGroupMemberMute, recallGroupMessage,
   listRefImages, upsertRefImage, clearRefImages, setPersonaAppearance, setPersonaRefsFrozen,
   listStalePendingImages, setPersonaVoiceId, listMessages, carryOverConversation,
+  setPersonaShaping, renamePersona, setPersonaProConfig, setPersonaSystemPrompt,
+  setPersonaDayLog, setConversationAgenda, setConversationCloseness, setMemoryFollowUp, setMessageReadAt,
 } = require('../lib/db') as typeof import('../lib/db');
 
 beforeEach(() => {
@@ -287,5 +289,52 @@ describe('listStalePendingImages (v2.6 照片 launch sweep)', () => {
     expect(mockDb.getAllSync).toHaveBeenCalledWith(
       "SELECT id, content FROM messages WHERE kind='image' AND content LIKE '%\"status\":\"pending\"%'",
     );
+  });
+});
+
+describe('persona shaping setters (v2.9 立即开始)', () => {
+  it('writes the shaping state, name, proConfig and prompt through their own UPDATEs', () => {
+    setPersonaShaping('p1', '{"v":1}');
+    expect(mockDb.runSync).toHaveBeenLastCalledWith(
+      'UPDATE personas SET shaping=?, updatedAt=? WHERE id=?',
+      ['{"v":1}', expect.any(Number), 'p1'],
+    );
+    setPersonaShaping('p1', null);
+    expect(mockDb.runSync).toHaveBeenLastCalledWith(
+      'UPDATE personas SET shaping=?, updatedAt=? WHERE id=?',
+      [null, expect.any(Number), 'p1'],
+    );
+    renamePersona('p1', '小雨');
+    expect(mockDb.runSync).toHaveBeenLastCalledWith(
+      'UPDATE personas SET name=?, updatedAt=? WHERE id=?',
+      ['小雨', expect.any(Number), 'p1'],
+    );
+    setPersonaProConfig('p1', '{"schedule":[]}');
+    expect(mockDb.runSync).toHaveBeenLastCalledWith(
+      'UPDATE personas SET proConfig=?, updatedAt=? WHERE id=?',
+      ['{"schedule":[]}', expect.any(Number), 'p1'],
+    );
+    setPersonaSystemPrompt('p1', '你是我的女朋友。\n\n【风格】语气=冷静淡然');
+    expect(mockDb.runSync).toHaveBeenLastCalledWith(
+      'UPDATE personas SET systemPrompt=?, updatedAt=? WHERE id=?',
+      ['你是我的女朋友。\n\n【风格】语气=冷静淡然', expect.any(Number), 'p1'],
+    );
+  });
+});
+
+describe('v3.0 真实感 setters', () => {
+  it('write dayLog, agenda, closeness, followUpAt and readAt through their own UPDATEs', () => {
+    setPersonaDayLog('p1', '{"day":"20260913","events":["x"]}');
+    expect(mockDb.runSync).toHaveBeenLastCalledWith('UPDATE personas SET dayLog=? WHERE id=?', ['{"day":"20260913","events":["x"]}', 'p1']);
+    setConversationAgenda('c1', '周末去哪玩');
+    expect(mockDb.runSync).toHaveBeenLastCalledWith('UPDATE conversations SET agenda=? WHERE id=?', ['周末去哪玩', 'c1']);
+    setConversationAgenda('c1', null);
+    expect(mockDb.runSync).toHaveBeenLastCalledWith('UPDATE conversations SET agenda=? WHERE id=?', [null, 'c1']);
+    setConversationCloseness('c1', 41);
+    expect(mockDb.runSync).toHaveBeenLastCalledWith('UPDATE conversations SET closeness=? WHERE id=?', [41, 'c1']);
+    setMemoryFollowUp('m1', 123);
+    expect(mockDb.runSync).toHaveBeenLastCalledWith('UPDATE memories SET followUpAt=? WHERE id=?', [123, 'm1']);
+    setMessageReadAt('x1', 456);
+    expect(mockDb.runSync).toHaveBeenLastCalledWith('UPDATE messages SET readAt=? WHERE id=?', [456, 'x1']);
   });
 });

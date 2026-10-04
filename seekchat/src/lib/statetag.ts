@@ -2,6 +2,8 @@ export interface StateTag {
   mood: string;
   intensity: number;
   thought: string;
+  /** 想聊 (v3.0): what she wants to bring up; null = field absent, '' = she cleared it (想聊:无). */
+  agenda: string | null;
 }
 
 // Envelope FIRST, fields second: the entire 【状态|…】 tag is a hidden channel,
@@ -37,7 +39,7 @@ export function normalizeStateEnvelope(full: string): string {
   if (!closer) return full; // unclosed — the streaming hider handles display
   const inner = tail.slice(lastLen, closer.index);
   // Intent check: a real envelope names at least one of its fields.
-  if (!/心情|强度|心想|成长/.test(inner)) return full;
+  if (!/心情|强度|心想|成长|想聊/.test(inner)) return full;
   return (
     full.slice(0, last) + OPENER + inner.replace(/｜/g, '|') + '】' +
     tail.slice(closer.index + 1)
@@ -66,6 +68,7 @@ export function extractStateTag(full: string): {
   let mood: string | null = null;
   let intensity: number | null = null;
   let thought = '';
+  let agenda: string | null = null;
   let growth: number | null = null;
   let pat: string | null = null;
   const extras: string[] = [];
@@ -79,6 +82,7 @@ export function extractStateTag(full: string): {
       const p = parseFloat(val);
       intensity = Number.isNaN(p) ? null : Math.min(1, Math.max(0, p));
     } else if (key === '心想') thought = val;
+    else if (key === '想聊') agenda = /^(无|没有|暂无|none)?$/i.test(val) ? '' : val;
     else if (key === '成长') {
       const g = parseFloat(val);
       if (!Number.isNaN(g)) growth = g;
@@ -88,7 +92,7 @@ export function extractStateTag(full: string): {
   }
   return {
     clean,
-    tag: mood !== null && intensity !== null ? { mood, intensity, thought } : null,
+    tag: mood !== null && intensity !== null ? { mood, intensity, thought, agenda } : null,
     growth,
     pat,
     extras,

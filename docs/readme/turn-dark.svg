@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 516" width="960" height="516" role="img" aria-label="One DM turn in twelve stages: one perception call and one chat-model call every turn, other utility calls only when needed, and a rhythm check that can defer delivery" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" color="#e6edf3" fill="currentColor">
+<title>One DM turn in twelve stages: one perception call and one chat-model call every turn, other utility calls only when needed, and a rhythm check that can defer delivery</title>
+<rect width="960" height="516" fill="#0d1117"/>
+<defs><marker id="turn-arr-k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="turn-arr-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6ea8e0"/></marker><marker id="turn-arr-t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3fb598"/></marker><marker id="turn-arr-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f0784a"/></marker></defs>
+<text x="20" y="96" font-size="10.5" text-anchor="start" fill="currentColor" font-weight="600" opacity="0.65" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">BEFORE</text>
+<text x="20" y="110" font-size="10.5" text-anchor="start" fill="currentColor" font-weight="600" opacity="0.65" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">THE CALL</text>
+<text x="20" y="253" font-size="10.5" text-anchor="start" fill="currentColor" font-weight="600" opacity="0.65" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">THE CALL</text>
+<text x="20" y="396" font-size="10.5" text-anchor="start" fill="currentColor" font-weight="600" opacity="0.65" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">AFTER</text>
+<text x="20" y="410" font-size="10.5" text-anchor="start" fill="currentColor" font-weight="600" opacity="0.65" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">THE CALL</text>
+<rect x="130" y="66" width="146" height="66" rx="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="203" y="89" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">1 · Burst hold</text>
+<text x="203" y="105" font-size="10.5" text-anchor="middle" fill="currentColor">stamps the read receipt,</text>
+<text x="203" y="121" font-size="10.5" text-anchor="middle" fill="currentColor">waits for typing to stop</text>
+<rect x="294" y="66" width="146" height="66" rx="8" stroke="#3fb598" stroke-width="2" fill="#3fb598" fill-opacity="0.09"/>
+<text x="367" y="89" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">2 · Perception</text>
+<text x="367" y="105" font-size="10.5" text-anchor="middle" fill="currentColor">reads the moment:</text>
+<text x="367" y="121" font-size="10.5" text-anchor="middle" fill="currentColor">mood, length, facts</text>
+<rect x="302" y="56" width="51.8" height="17" rx="8.5" stroke="#3fb598" stroke-width="1.2" fill="#3fb598"/>
+<text x="327.9" y="67.74" font-size="9" text-anchor="middle" fill="#0d1117" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">utility</text>
+<text x="367" y="147" font-size="10" text-anchor="middle" fill="currentColor" opacity="0.65">switch: perception</text>
+<rect x="458" y="66" width="146" height="66" rx="8" stroke="#3fb598" stroke-width="2" fill="#3fb598" fill-opacity="0.09"/>
+<text x="531" y="89" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">3 · Her day</text>
+<text x="531" y="105" font-size="10.5" text-anchor="middle" fill="currentColor">2–3 small events,</text>
+<text x="531" y="121" font-size="10.5" text-anchor="middle" fill="currentColor">first turn of the day</text>
+<rect x="466" y="56" width="95" height="17" rx="8.5" stroke="#3fb598" stroke-width="1.2" fill="#3fb598"/>
+<text x="513.5" y="67.74" font-size="9" text-anchor="middle" fill="#0d1117" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">utility · daily</text>
+<rect x="622" y="66" width="146" height="66" rx="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="695" y="89" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">4 · Compose</text>
+<text x="695" y="105" font-size="10.5" text-anchor="middle" fill="currentColor">rules, persona, evidence,</text>
+<text x="695" y="121" font-size="10.5" text-anchor="middle" fill="currentColor">history window</text>
+<rect x="786" y="66" width="146" height="66" rx="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="859" y="89" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">5 · Rhythm check</text>
+<text x="859" y="105" font-size="10.5" text-anchor="middle" fill="currentColor">free, busy or asleep,</text>
+<text x="859" y="121" font-size="10.5" text-anchor="middle" fill="currentColor">by her schedule</text>
+<text x="859" y="147" font-size="10" text-anchor="middle" fill="currentColor" opacity="0.65">switch: rhythm</text>
+<rect x="130" y="216" width="146" height="66" rx="8" stroke="#6ea8e0" stroke-width="2" fill="#6ea8e0" fill-opacity="0.09"/>
+<text x="203" y="239" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">6 · Main call</text>
+<text x="203" y="255" font-size="10.5" text-anchor="middle" fill="currentColor">streams the reply,</text>
+<text x="203" y="271" font-size="10.5" text-anchor="middle" fill="currentColor">thinking optional</text>
+<rect x="138" y="206" width="68" height="17" rx="8.5" stroke="#6ea8e0" stroke-width="1.2" fill="#6ea8e0"/>
+<text x="172" y="217.74" font-size="9" text-anchor="middle" fill="#0d1117" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">chat model</text>
+<rect x="294" y="216" width="146" height="66" rx="8" stroke="#3fb598" stroke-width="2" fill="#3fb598" fill-opacity="0.09"/>
+<text x="367" y="239" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">7 · Marker repair</text>
+<text x="367" y="255" font-size="10.5" text-anchor="middle" fill="currentColor">only when the lint</text>
+<text x="367" y="271" font-size="10.5" text-anchor="middle" fill="currentColor">finds broken syntax</text>
+<rect x="302" y="206" width="116.6" height="17" rx="8.5" stroke="#3fb598" stroke-width="1.2" fill="#3fb598"/>
+<text x="360.3" y="217.74" font-size="9" text-anchor="middle" fill="#0d1117" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">utility · if needed</text>
+<rect x="130" y="366" width="146" height="66" rx="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="203" y="389" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">8 · Extract</text>
+<text x="203" y="405" font-size="10.5" text-anchor="middle" fill="currentColor">hidden state, memory,</text>
+<text x="203" y="421" font-size="10.5" text-anchor="middle" fill="currentColor">texture and media</text>
+<rect x="294" y="366" width="146" height="66" rx="8" stroke="#3fb598" stroke-width="2" fill="#3fb598" fill-opacity="0.09"/>
+<text x="367" y="389" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">9 · Cut + typo</text>
+<text x="367" y="405" font-size="10.5" text-anchor="middle" fill="currentColor">long reply → bubbles,</text>
+<text x="367" y="421" font-size="10.5" text-anchor="middle" fill="currentColor">rare typo + *fix</text>
+<rect x="302" y="356" width="132.8" height="17" rx="8.5" stroke="#3fb598" stroke-width="1.2" fill="#3fb598"/>
+<text x="368.4" y="367.74" font-size="9" text-anchor="middle" fill="#0d1117" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">utility · long replies</text>
+<text x="367" y="447" font-size="10" text-anchor="middle" fill="currentColor" opacity="0.65">switch: texture</text>
+<rect x="458" y="366" width="146" height="66" rx="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="531" y="389" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">10 · Persist</text>
+<text x="531" y="405" font-size="10.5" text-anchor="middle" fill="currentColor">bubbles: text, voice,</text>
+<text x="531" y="421" font-size="10.5" text-anchor="middle" fill="currentColor">unsend; photo jobs</text>
+<rect x="622" y="366" width="146" height="66" rx="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="695" y="389" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">11 · Wrap-up</text>
+<text x="695" y="405" font-size="10.5" text-anchor="middle" fill="currentColor">advance the style tree,</text>
+<text x="695" y="421" font-size="10.5" text-anchor="middle" fill="currentColor">queue a deferred reply</text>
+<rect x="786" y="366" width="146" height="66" rx="8" stroke="#3fb598" stroke-width="2" fill="#3fb598" fill-opacity="0.09"/>
+<text x="859" y="389" font-size="12.5" text-anchor="middle" fill="currentColor" font-weight="700">12 · Summarize</text>
+<text x="859" y="405" font-size="10.5" text-anchor="middle" fill="currentColor">rolling summary when</text>
+<text x="859" y="421" font-size="10.5" text-anchor="middle" fill="currentColor">history outgrows it</text>
+<rect x="794" y="356" width="116.6" height="17" rx="8.5" stroke="#3fb598" stroke-width="1.2" fill="#3fb598"/>
+<text x="852.3" y="367.74" font-size="9" text-anchor="middle" fill="#0d1117" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">utility · threshold</text>
+<polyline points="276,99 294,99" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#turn-arr-k)"/>
+<polyline points="440,99 458,99" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#turn-arr-k)"/>
+<polyline points="604,99 622,99" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#turn-arr-k)"/>
+<polyline points="768,99 786,99" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#turn-arr-k)"/>
+<polyline points="276,399 294,399" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#turn-arr-k)"/>
+<polyline points="440,399 458,399" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#turn-arr-k)"/>
+<polyline points="604,399 622,399" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#turn-arr-k)"/>
+<polyline points="768,399 786,399" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#turn-arr-k)"/>
+<polyline points="276,249 294,249" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#turn-arr-k)"/>
+<polyline points="796,132 796,186 240,186 240,214" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#turn-arr-k)"/>
+<polyline points="920,132 920,214" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" stroke-dasharray="5 4" marker-end="url(#turn-arr-k)"/>
+<text x="858" y="174" font-size="10.5" text-anchor="middle" fill="currentColor" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" paint-order="stroke" stroke="#0d1117" stroke-width="5" stroke-linejoin="round">busy / asleep</text>
+<rect x="458" y="216" width="474" height="66" rx="8" stroke="currentColor" stroke-width="1.2" fill="none" stroke-dasharray="5 4"/>
+<text x="695" y="238" font-size="11" text-anchor="middle" fill="currentColor" font-weight="600">Busy: one short line now. Asleep: nothing now.</text>
+<text x="695" y="254" font-size="11" text-anchor="middle" fill="currentColor">Either way the full reply is written right away and</text>
+<text x="695" y="270" font-size="11" text-anchor="middle" fill="currentColor">delivered when her slot ends or she wakes (see Rhythm).</text>
+<polyline points="367,282 367,336 240,336 240,364" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#turn-arr-k)"/>
+<rect x="130" y="460" width="51.8" height="17" rx="8.5" stroke="#3fb598" stroke-width="1.2" fill="#3fb598"/>
+<text x="155.9" y="471.74" font-size="9" text-anchor="middle" fill="#0d1117" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">utility</text>
+<text x="200" y="472" font-size="11" text-anchor="start" fill="currentColor">the provider&#x27;s cheapest model with thinking off (deepseek-flash / glm-4.7-flashx)</text>
+<rect x="130" y="484" width="68" height="17" rx="8.5" stroke="#6ea8e0" stroke-width="1.2" fill="#6ea8e0"/>
+<text x="164" y="495.74" font-size="9" text-anchor="middle" fill="#0d1117" font-weight="600" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">chat model</text>
+<text x="222" y="496" font-size="11" text-anchor="start" fill="currentColor">the DeepSeek or GLM model the user picked; thinking and temperature follow settings</text>
+<text x="940" y="472" font-size="10.5" text-anchor="end" fill="currentColor" opacity="0.75">no badge = pure code, no model call</text>
+</svg>

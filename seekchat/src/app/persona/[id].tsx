@@ -6,8 +6,12 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
   createPersona, deletePersona, getPersona, listRefImages, setPersonaAppearance,
-  setPersonaVoiceId, updatePersona,
+  setPersonaShaping, setPersonaSystemPrompt, setPersonaVoiceId, updatePersona,
 } from '../../lib/db';
+import {
+  bakeShapingIntoPrompt, initialShaping, parseShaping, shapingSummary, STYLE_TREE,
+} from '../../lib/shaping';
+import type { ShapingState } from '../../lib/shaping';
 import { useTheme } from '../../lib/theme-context';
 import { pickRawImage, RawImage } from '../../lib/avatar';
 import { Avatar } from '../../components/Avatar';
@@ -131,6 +135,44 @@ export default function PersonaEditScreen() {
   // pattern as appearance above. Empty input saves as null — falls back to
   // the global default Voice ID configured in settings.
   const [voiceIdInput, setVoiceIdInput] = useState(existing?.voiceId ?? '');
+
+  // 立即开始 (v2.9): her self-shaping state, read-only here except for the two
+  // controls — 重新塑造 (start the tree over, keep everything she wrote into
+  // name/作息/兴趣) and 定稿 (bake what she became into an ordinary prompt and
+  // leave the mode). Both persist immediately, like appearance/voice above.
+  const [shapingState, setShapingState] = useState<ShapingState | null>(
+    parseShaping(existing?.shaping),
+  );
+  const restartShaping = () => {
+    Alert.alert('重新塑造？', '风格试探从头开始；她的名字、作息和兴趣保留。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '重新开始',
+        style: 'destructive',
+        onPress: () => {
+          const fresh = initialShaping();
+          setPersonaShaping(id, JSON.stringify(fresh));
+          setShapingState(fresh);
+        },
+      },
+    ]);
+  };
+  const finalizeShaping = () => {
+    if (!shapingState) return;
+    Alert.alert('定稿？', '把她已经长成的样子写进人设，结束塑造模式（之后可以像普通人设一样编辑）。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '定稿',
+        onPress: () => {
+          const baked = bakeShapingIntoPrompt(prompt, shapingState);
+          setPersonaSystemPrompt(id, baked);
+          setPersonaShaping(id, null);
+          setPrompt(baked);
+          setShapingState(null);
+        },
+      },
+    ]);
+  };
   const showVoiceIdGuide = () => {
     Alert.alert(
       '如何获得 Voice ID',
@@ -255,6 +297,47 @@ export default function PersonaEditScreen() {
       <Pressable style={s.avatarWrap} onPress={() => void changeAvatar()}>
         <Avatar uri={avatar} name={name || '?'} size={72} />
       </Pressable>
+      {!isNew && shapingState && (() => {
+        const sum = shapingSummary(shapingState);
+        return (
+          <View style={[s.shapingBox, { borderColor: th.accent }]}>
+            <Text style={[s.shapingTitle, { color: th.accent }]}>
+              塑造中（立即开始模式）· 第 {shapingState.turns} 轮
+            </Text>
+            <Text style={s.shapingLine}>
+              已定型：{sum.settled.length ? sum.settled.join('；') : '还没有'}
+            </Text>
+            <Text style={s.shapingLine}>
+              正在试探：{sum.probing ?? '无（风格已全部定型或试遍）'}
+            </Text>
+            {sum.open.length > 0 && (
+              <Text style={s.shapingLine}>待试探：{sum.open.join('、')}</Text>
+            )}
+            {sum.skipped.length > 0 && (
+              <Text style={s.shapingLine}>暂无定论：{sum.skipped.join('、')}</Text>
+            )}
+            <Text style={s.shapingLine}>
+              自画像（{shapingState.portrait.length} 条）：
+              {shapingState.portrait.length ? '' : '她还没写下关于自己的事'}
+            </Text>
+            {shapingState.portrait.map((p, i) => (
+              <Text key={i} style={s.shapingItem}>· {p}</Text>
+            ))}
+            <Text style={s.shapingHint}>
+              风格维度：{STYLE_TREE.map((d) => d.key).join('、')}。她在聊天里每几轮换一种试，
+              读你的反应后自己定型或排除；作息和兴趣写进下方的 Pro 设置。
+            </Text>
+            <View style={s.customRateRow}>
+              <Pressable style={[s.shapingBtn, { backgroundColor: th.accentSoft }]} onPress={restartShaping}>
+                <Text style={{ color: th.accent }}>重新塑造</Text>
+              </Pressable>
+              <Pressable style={[s.shapingBtn, { backgroundColor: th.accent }]} onPress={finalizeShaping}>
+                <Text style={{ color: '#fff' }}>定稿，结束塑造</Text>
+              </Pressable>
+            </View>
+          </View>
+        );
+      })()}
       {!isNew && (
         <>
           <Text style={s.label}>形象设定（外貌描述，用于生成参考图）</Text>
@@ -672,11 +755,11 @@ export default function PersonaEditScreen() {
         title="开启屏幕窥视前请确认"
         body={
           '开启后，应用会通过系统「使用情况访问」权限读取你当前正在使用的应用名称（仅应用名，不读取任何内容），' +
-          '并把它发给 DeepSeek，让角色即时做出反应（例如你打开音乐 App 时她发来"在听什么啊？"）。\n\n' +
-          '这意味着：你的前台应用名称会离开设备发送到 DeepSeek 服务器；每次反应都是一次真实 API 请求并产生费用。' +
+          '并把它发给你所选的模型服务商（DeepSeek 或 GLM），让角色即时做出反应（例如你打开音乐 App 时她发来"在听什么啊？"）。\n\n' +
+          '这意味着：你的前台应用名称会离开设备发送到模型服务商的服务器；每次反应都是一次真实 API 请求并产生费用。' +
           '随时可关闭本开关或收回系统权限。'
         }
-        tickLabel="我理解并接受前台应用名称会被发送给 DeepSeek"
+        tickLabel="我理解并接受前台应用名称会被发送给模型服务商"
         onCancel={() => setWatchConsentOpen(false)}
         onConfirm={() => {
           setWatchConsent(true);
@@ -707,7 +790,7 @@ export default function PersonaEditScreen() {
             <Text style={s.consentTitle}>开启主动联系前请确认</Text>
             <Text style={s.consentBody}>
               开启后，角色会在你标记的时段内按所选频率自动发起对话。每一次主动消息都会真实调用
-              DeepSeek API 并产生费用（按 token 计费），即使你没有在看这个聊天。
+              模型服务商 API（DeepSeek 或 GLM）并产生费用（按 token 计费），即使你没有在看这个聊天。
             </Text>
             <Pressable
               style={s.consentTickRow}
@@ -767,6 +850,12 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#fff' },
   avatarWrap: { alignSelf: 'flex-start' },
   label: { fontSize: 13, color: '#888', marginTop: 16, marginBottom: 6 },
+  shapingBox: { marginTop: 16, padding: 12, borderRadius: 12, borderWidth: 1.5 },
+  shapingTitle: { fontSize: 14, fontWeight: '700', marginBottom: 6 },
+  shapingLine: { fontSize: 13, color: '#444', marginTop: 4, flexShrink: 1 },
+  shapingItem: { fontSize: 13, color: '#666', marginLeft: 8, marginTop: 2 },
+  shapingHint: { fontSize: 11, color: '#999', marginTop: 8, lineHeight: 15 },
+  shapingBtn: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
   input: { fontSize: 15, padding: 10, backgroundColor: '#f2f2f2', borderRadius: 10 },
   area: { minHeight: 200, lineHeight: 21 },
   proHeader: { marginTop: 24, paddingVertical: 8 },

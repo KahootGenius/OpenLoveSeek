@@ -1,14 +1,25 @@
-// 动态想象力 (v2.1.1): a tiny pre-turn classifier picks her register for THIS
-// reply — precision for factual/diary talk, imagination for play. The model
-// only gets one word to say; every fallback lives in code (garbage → the
-// user's manual 想象力 setting rides).
+// 动态想象力 (v2.1.1) + 动态篇幅 (v2.9): one tiny pre-turn classifier picks
+// her register for THIS reply — precision for factual/diary talk, imagination
+// for play — and, since v2.9, its length tier (短/中/长), which rides into
+// the prompt as a one-line 【这条回复的篇幅】 directive. The model only gets
+// two words to say; every fallback lives in code (garbage → the user's manual
+// 想象力 setting rides, and no length line is injected).
 
 import { renderPrompt } from './prompts';
 import type { Message } from './types';
 
 export type TempChoice = '严谨' | '平衡' | '奔放';
+export type LengthChoice = '短' | '中' | '长';
 
 const CHOICES: readonly TempChoice[] = ['严谨', '平衡', '奔放'];
+const LENGTHS: readonly LengthChoice[] = ['短', '中', '长'];
+
+/** Prompt-registry key of the directive injected for each tier. */
+export const LENGTH_PROMPT_KEY: Record<LengthChoice, string> = {
+  短: 'length.short',
+  中: 'length.medium',
+  长: 'length.long',
+};
 
 type TempMessage = Pick<Message, 'role' | 'kind' | 'content'>;
 
@@ -60,4 +71,22 @@ export function parseTempChoice(raw: string): TempChoice | null {
     if (i >= 0 && (!best || i > best.i)) best = { c, i };
   }
   return best?.c ?? null;
+}
+
+// A chatty answer longer than this is not a two-word verdict; the single-
+// character tiers (中/长) would false-match inside prose, so give up instead.
+const LENGTH_FALLBACK_MAX = 20;
+
+/** The 篇幅 half of the verdict: an exact token (split on |, whitespace or
+ *  punctuation), else the last tier named in a SHORT answer. Null otherwise. */
+export function parseLengthChoice(raw: string): LengthChoice | null {
+  const tokens = raw.split(/[|｜\s，,、:：]+/).map((t) => t.trim());
+  for (const t of tokens) for (const l of LENGTHS) if (t === l) return l;
+  if (raw.trim().length > LENGTH_FALLBACK_MAX) return null;
+  let best: { l: LengthChoice; i: number } | null = null;
+  for (const l of LENGTHS) {
+    const i = raw.lastIndexOf(l);
+    if (i >= 0 && (!best || i > best.i)) best = { l, i };
+  }
+  return best?.l ?? null;
 }

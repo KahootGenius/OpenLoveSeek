@@ -97,6 +97,7 @@ describe('buildRequestMessages', () => {
 
   it('sends grounded instructions, data-only evidence, then conversation history', () => {
     const prompt = composeDmPrompt({
+      coreRules: 'CORE',
       persona: 'PERSONA',
       coreTruth: 'TRUTH',
       diaryInstructions: 'DIARY_CONTRACT',

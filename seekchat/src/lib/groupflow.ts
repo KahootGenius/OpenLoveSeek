@@ -20,10 +20,11 @@ import {
   planCatchup, renderTranscript, splitSpeakerBurst,
 } from './groupchat';
 import type { GroupConfig } from './groupchat';
-import { chatOnce } from './deepseek';
-import { getApiKey, getModel, getMsgCut, getTemperature, getUserNickname } from './settings';
+import { chatOnce } from './llm';
+import {
+  getApiKey, getModel, getMsgCut, getSummarizerModel, getTemperature, getUserNickname,
+} from './settings';
 import { buildCutPrompt, needsCut, parseCut } from './cutter';
-import { SUMMARIZER_MODEL } from './constants';
 import { applyMemoryOps, extractMemoryMarkers } from './memory';
 import { extractGroupModMarkers } from './groupmarkers';
 import {
@@ -174,7 +175,7 @@ async function speakerLine(
     let outText = normalizeActionMarkers(out);
     if (lintMarkers(outText).suspects.length > 0) {
       try {
-        const fixed = await chatOnce(apiKey, SUMMARIZER_MODEL, [
+        const fixed = await chatOnce(apiKey, getSummarizerModel(), [
           { role: 'user', content: buildRepairPrompt(outText) },
         ], 0);
         if (acceptRepair(outText, fixed) && fixed.trim() !== outText.trim()) outText = fixed.trim();
@@ -305,7 +306,7 @@ async function speakerLine(
       if (chunks.length === 0) chunks = [body];
       if (chunks.length === 1 && getMsgCut() && needsCut(chunks[0])) {
         try {
-          const rawCut = await chatOnce(apiKey, SUMMARIZER_MODEL, [
+          const rawCut = await chatOnce(apiKey, getSummarizerModel(), [
             { role: 'user', content: buildCutPrompt(chunks[0]) },
           ], 0);
           const segs = parseCut(chunks[0], rawCut);
@@ -459,7 +460,7 @@ export async function runGroupRound(
         mutedMentionNotified.add(id);
         groupSystemLine(conversationId, `🔇 ${nameById.get(id) ?? '她'} 被禁言中，暂时不能回应`);
       }
-      const raw = await chatOnce(apiKey, SUMMARIZER_MODEL, [
+      const raw = await chatOnce(apiKey, getSummarizerModel(), [
         {
           role: 'user',
           content:
@@ -609,7 +610,7 @@ export async function groupCatchUp(conversationId: string): Promise<void> {
     const span = Date.now() - leaveAt;
     let landedAny = false;
     for (const f of plan) {
-      const raw = await chatOnce(apiKey, SUMMARIZER_MODEL, [
+      const raw = await chatOnce(apiKey, getSummarizerModel(), [
         {
           role: 'user',
           content:

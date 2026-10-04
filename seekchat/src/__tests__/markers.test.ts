@@ -1,5 +1,6 @@
 import { extractPatMarker, makeOwnLineMarker } from '../lib/markers';
 import { buildRealismRules } from '../lib/pro';
+import { renderPrompt } from '../lib/prompts';
 
 describe('makeOwnLineMarker', () => {
   const m = makeOwnLineMarker('测试');
@@ -65,8 +66,13 @@ describe('拍一拍 prompt grammar (v2.0)', () => {
     expect(rules).not.toContain('|拍一拍');
   });
 
-  it('lists 拍一拍 and 转账 among markers banned from the state tag', () => {
-    expect(rules).toContain('[拍一拍:…]');
-    expect(rules).toContain('[转账:…]');
+  it('names 拍一拍 and 转账 in the shared 标记通则, which bans markers from the state tag', () => {
+    // v2.9: the marker list + the smuggling ban moved from realism.tag to the
+    // shared block; the tag's own grammar keeps a one-line reinforcement.
+    const shared = renderPrompt('markers.rules');
+    expect(shared).toContain('[拍一拍:…]');
+    expect(shared).toContain('[转账:…]');
+    expect(shared).toContain('塞进末尾的状态标签');
+    expect(rules).toContain('其他标记不得塞进标签');
   });
 });

@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 528" width="960" height="528" role="img" aria-label="State loop: hidden channels in her reply and code-side writers update the stores; the next turn reads them back as evidence and guides" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" color="#e6edf3" fill="currentColor">
+<title>State loop: hidden channels in her reply and code-side writers update the stores; the next turn reads them back as evidence and guides</title>
+<rect width="960" height="528" fill="#0d1117"/>
+<defs><marker id="loop-arr-k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="loop-arr-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6ea8e0"/></marker><marker id="loop-arr-t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3fb598"/></marker><marker id="loop-arr-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f0784a"/></marker></defs>
+<polyline points="798,70 798,34 162,34 162,70" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" stroke-dasharray="6 4" marker-end="url(#loop-arr-k)"/>
+<text x="480" y="28" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600" paint-order="stroke" stroke="#0d1117" stroke-width="5" stroke-linejoin="round">next turn: prompt → chat model → her new reply</text>
+<text x="20" y="64" font-size="10.5" text-anchor="start" fill="currentColor" font-weight="600" opacity="0.65" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">WRITTEN BY THE MODEL</text>
+<text x="344" y="64" font-size="10.5" text-anchor="start" fill="currentColor" font-weight="600" opacity="0.65" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">STORED ON DEVICE (SQLITE v20)</text>
+<text x="656" y="64" font-size="10.5" text-anchor="start" fill="currentColor" font-weight="600" opacity="0.65" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">READ BACK NEXT TURN</text>
+<rect x="20" y="78" width="284" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="162" y="96.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Hidden state tag</text>
+<text x="162" y="112.075" font-size="10.5" text-anchor="middle" fill="currentColor">mood · thought · what she wants to bring up</text>
+<rect x="20" y="78" width="4" height="44" rx="2" stroke="#f0784a" stroke-width="1.2" fill="#f0784a"/>
+<polyline points="304,100 344,100" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#loop-arr-k)"/>
+<rect x="20" y="132" width="284" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="162" y="150.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Life markers (Quick Start)</text>
+<text x="162" y="166.075" font-size="10.5" text-anchor="middle" fill="currentColor">her own schedule and interests</text>
+<polyline points="304,154 344,154" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#loop-arr-k)"/>
+<rect x="20" y="186" width="284" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="162" y="204.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Reply text + texture markers</text>
+<text x="162" y="220.075" font-size="10.5" text-anchor="middle" fill="currentColor">bubbles · unsend · quote · voice note</text>
+<rect x="20" y="186" width="4" height="44" rx="2" stroke="#f0784a" stroke-width="1.2" fill="#f0784a"/>
+<polyline points="304,208 344,208" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#loop-arr-k)"/>
+<rect x="20" y="240" width="284" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="162" y="258.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Memory marker</text>
+<text x="162" y="274.075" font-size="10.5" text-anchor="middle" fill="currentColor">fallback when perception is off</text>
+<polyline points="304,262 344,262" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#loop-arr-k)"/>
+<rect x="344" y="78" width="272" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="currentColor" fill-opacity="0.06"/>
+<text x="480" y="96.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">conversations</text>
+<text x="480" y="112.075" font-size="10.5" text-anchor="middle" fill="currentColor">mood · thought · agenda · closeness · summary</text>
+<polyline points="616,100 656,100" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#loop-arr-k)"/>
+<rect x="344" y="132" width="272" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="currentColor" fill-opacity="0.06"/>
+<text x="480" y="150.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">personas</text>
+<text x="480" y="166.075" font-size="10.5" text-anchor="middle" fill="currentColor">style tree · schedule · interests · day log</text>
+<polyline points="616,154 656,154" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#loop-arr-k)"/>
+<rect x="344" y="186" width="272" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="currentColor" fill-opacity="0.06"/>
+<text x="480" y="204.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">messages</text>
+<text x="480" y="220.075" font-size="10.5" text-anchor="middle" fill="currentColor">bubbles · read receipts · kinds · quotes</text>
+<polyline points="616,208 656,208" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#loop-arr-k)"/>
+<rect x="344" y="240" width="272" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="currentColor" fill-opacity="0.06"/>
+<text x="480" y="258.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">memories</text>
+<text x="480" y="274.075" font-size="10.5" text-anchor="middle" fill="currentColor">facts about the user · follow-up dates</text>
+<polyline points="616,262 656,262" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#loop-arr-k)"/>
+<rect x="344" y="294" width="272" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="currentColor" fill-opacity="0.06"/>
+<text x="480" y="312.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">scheduled-message store</text>
+<text x="480" y="328.075" font-size="10.5" text-anchor="middle" fill="currentColor">deferred replies · proactive messages</text>
+<polyline points="616,316 656,316" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#loop-arr-k)"/>
+<rect x="656" y="78" width="284" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="798" y="96.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">State block (evidence)</text>
+<text x="798" y="112.075" font-size="10.5" text-anchor="middle" fill="currentColor">mood · thought · agenda · events · closeness</text>
+<rect x="936" y="78" width="4" height="44" rx="2" stroke="#f0784a" stroke-width="1.2" fill="#f0784a"/>
+<rect x="656" y="132" width="284" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="798" y="150.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Style guide (Quick Start)</text>
+<text x="798" y="166.075" font-size="10.5" text-anchor="middle" fill="currentColor">settled styles · current probe · self-portrait</text>
+<rect x="656" y="186" width="284" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="798" y="204.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Chat screen</text>
+<text x="798" y="220.075" font-size="10.5" text-anchor="middle" fill="currentColor">read receipts · unsend notes · voice bubbles</text>
+<rect x="936" y="186" width="4" height="44" rx="2" stroke="#f0784a" stroke-width="1.2" fill="#f0784a"/>
+<rect x="656" y="240" width="284" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="798" y="258.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Memory block (evidence)</text>
+<text x="798" y="274.075" font-size="10.5" text-anchor="middle" fill="currentColor">facts + follow-ups that are due</text>
+<rect x="656" y="294" width="284" height="44" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="798" y="312.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Delivered on time</text>
+<text x="798" y="328.075" font-size="10.5" text-anchor="middle" fill="currentColor">a deferred reply folds into the chat</text>
+<rect x="936" y="294" width="4" height="44" rx="2" stroke="#f0784a" stroke-width="1.2" fill="#f0784a"/>
+<line x1="130" y1="378" x2="830" y2="378" stroke="currentColor" stroke-width="1" opacity="0.7"/>
+<polyline points="480,378 480,342" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" marker-end="url(#loop-arr-k)"/>
+<text x="490" y="366" font-size="11" text-anchor="start" fill="currentColor" opacity="0.8" font-style="italic">code writes into the same stores (no model markers)</text>
+<polyline points="130,378 130,400" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+<rect x="20" y="400" width="220" height="46" rx="6" stroke="#3fb598" stroke-width="2" fill="#3fb598" fill-opacity="0.09"/>
+<text x="130" y="419.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Perception · every turn</text>
+<text x="130" y="435.075" font-size="10.5" text-anchor="middle" fill="currentColor">facts · follow-ups · closeness · verdict</text>
+<polyline points="362,378 362,400" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+<rect x="252" y="400" width="220" height="46" rx="6" stroke="#3fb598" stroke-width="2" fill="#3fb598" fill-opacity="0.09"/>
+<text x="362" y="419.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Day seed · once a day</text>
+<text x="362" y="435.075" font-size="10.5" text-anchor="middle" fill="currentColor">2–3 small events → day log</text>
+<polyline points="594,378 594,400" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+<rect x="484" y="400" width="220" height="46" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="594" y="419.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Rhythm · pure code</text>
+<text x="594" y="435.075" font-size="10.5" text-anchor="middle" fill="currentColor">read receipts · deferred replies</text>
+<polyline points="826,378 826,400" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+<rect x="716" y="400" width="220" height="46" rx="6" stroke="currentColor" stroke-width="1.2" fill="none"/>
+<text x="826" y="419.205" font-size="11.5" text-anchor="middle" fill="currentColor" font-weight="600">Turn close · pure code</text>
+<text x="826" y="435.075" font-size="10.5" text-anchor="middle" fill="currentColor">advance the style tree · mood growth</text>
+<text x="20" y="512" font-size="11" text-anchor="start" fill="currentColor" opacity="0.8">Red edge = channels added in v3.0. Model-written state is fenced as evidence; the user&#x27;s own words always win over it.</text>
+</svg>

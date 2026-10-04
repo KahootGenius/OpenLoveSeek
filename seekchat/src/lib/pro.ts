@@ -137,6 +137,13 @@ export function buildStateBlock(args: {
   mood: { label: string; intensity: number };
   thought: string | null;
   lastReply?: string | null;
+  /** v3.0 真实感 — all optional so older call sites render exactly as before. */
+  agenda?: string | null; // 想聊
+  closenessLine?: string | null;
+  calendarLines?: string[];
+  dayEventsLine?: string | null;
+  dueFollowUps?: string[];
+  userMood?: string | null;
 }): string {
   const d = args.now;
   const lines = [
@@ -152,6 +159,14 @@ export function buildStateBlock(args: {
       : `你当前的心情：${args.mood.label}`,
   );
   if (args.thought?.trim()) lines.push(`你刚才心里在想：${args.thought.trim()}`);
+  if (args.agenda?.trim()) lines.push(`你想找机会聊的：${args.agenda.trim()}`);
+  if (args.dayEventsLine) lines.push(args.dayEventsLine);
+  for (const l of args.calendarLines ?? []) lines.push(l);
+  if (args.dueFollowUps?.length) {
+    lines.push(`到了该问问的事：${args.dueFollowUps.join('；')}`);
+  }
+  if (args.closenessLine) lines.push(args.closenessLine);
+  if (args.userMood?.trim()) lines.push(`对方此刻看起来：${args.userMood.trim()}`);
   // Her own last utterance, made salient so she stays consistent with it
   // (models otherwise drift from what they just said).
   if (args.lastReply?.trim()) {
