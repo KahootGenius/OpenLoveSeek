@@ -23,6 +23,22 @@ describe('partitionScheduledConversation', () => {
     expect(result.removed.map((x) => x.notifId)).toEqual(['n1', 'n3']);
     expect(result.remaining.map((x) => x.notifId)).toEqual(['n2']);
   });
+
+  it('keeps held replies unless a withdrawn message came before them', () => {
+    const item = (conversationId: string, notifId: string, kind?: 'reply', generatedAt = 50) => ({
+      conversationId, notifId, text: notifId, fireAt: 100, generatedAt, kind,
+    });
+    const items = [
+      item('c1', 'o1'), item('c1', 'r-old', 'reply', 40), item('c1', 'r-new', 'reply', 60),
+      item('c2', 'r-c2', 'reply', 60),
+    ];
+    // An already-read message was deleted: outreach goes, held replies stay.
+    expect(partitionScheduledConversation(items, 'c1').removed.map((x) => x.notifId)).toEqual(['o1']);
+    // A still-unread message sent at 55 was withdrawn: replies written after it go too.
+    const withdrawn = partitionScheduledConversation(items, 'c1', 55);
+    expect(withdrawn.removed.map((x) => x.notifId)).toEqual(['o1', 'r-new']);
+    expect(withdrawn.remaining.map((x) => x.notifId)).toEqual(['r-old', 'r-c2']);
+  });
 });
 
 describe('createOutreachCancellationGate', () => {

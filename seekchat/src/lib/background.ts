@@ -488,21 +488,32 @@ let lastSyncAt = 0;
 let outreachGen = 0; // bumped whenever the plan is force-invalidated (opt-out)
 const outreachCancellationGate = createOutreachCancellationGate();
 
-/** Cancel every scheduled outreach notification and clear the plan. Bumps the
+/** Opt-out: cancel every scheduled OUTREACH notification and drop it from the
+ *  plan. Held replies (kind 'reply') aren't outreach: they keep their
+ *  notification and fold in on resume — unless their chat is gone. Bumps the
  *  generation so any in-flight sync aborts instead of re-arming after opt-out. */
 export async function cancelAllOutreach(): Promise<void> {
   outreachGen++;
-  const items = readSched();
-  for (const i of items) await cancelNotif(i.notifId);
-  if (items.length) writeSched([]);
+  const retired = readSched().filter((i) => i.kind !== 'reply' || !getConversation(i.conversationId));
+  for (const i of retired) await cancelNotif(i.notifId);
+  if (retired.length === 0) return;
+  // Re-read: a reply held while the loop awaited must survive this write.
+  const ids = new Set(retired.map((i) => i.notifId));
+  writeSched(readSched().filter((i) => !ids.has(i.notifId)));
 }
 
-export async function cancelConversationOutreach(conversationId: string): Promise<void> {
+/** Message deletion: retire this chat's pre-written outreach. Its held reply
+ *  stays unless the deleted message was still unread (`withdrawnSince` = its
+ *  createdAt) — then replies written after it go, since she never saw it. */
+export async function cancelConversationOutreach(
+  conversationId: string,
+  withdrawnSince: number | null = null,
+): Promise<void> {
   await outreachCancellationGate.run(async () => {
     outreachGen++;
-    const initial = partitionScheduledConversation(readSched(), conversationId);
+    const initial = partitionScheduledConversation(readSched(), conversationId, withdrawnSince);
     for (const item of initial.removed) await cancelNotif(item.notifId);
-    const rebased = partitionScheduledConversation(readSched(), conversationId);
+    const rebased = partitionScheduledConversation(readSched(), conversationId, withdrawnSince);
     if (rebased.removed.length > 0) writeSched(rebased.remaining);
   });
 }

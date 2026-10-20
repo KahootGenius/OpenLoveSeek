@@ -95,13 +95,20 @@ export function splitDue(
   };
 }
 
+/** Pure. What deleting a message retires in this conversation: its pre-written
+ *  outreach always; a held reply only when it was written after a withdrawn
+ *  (still unread) message — `withdrawnSince` = that message's createdAt. */
 export function partitionScheduledConversation(
   items: ScheduledMsg[],
   conversationId: string,
+  withdrawnSince: number | null = null,
 ): { removed: ScheduledMsg[]; remaining: ScheduledMsg[] } {
+  const retire = (item: ScheduledMsg): boolean =>
+    item.conversationId === conversationId &&
+    (item.kind !== 'reply' || (withdrawnSince != null && item.generatedAt >= withdrawnSince));
   return {
-    removed: items.filter((item) => item.conversationId === conversationId),
-    remaining: items.filter((item) => item.conversationId !== conversationId),
+    removed: items.filter(retire),
+    remaining: items.filter((item) => !retire(item)),
   };
 }
 

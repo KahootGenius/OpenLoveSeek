@@ -54,7 +54,7 @@ import {
 } from '../../lib/settings';
 import { activityAt, decayedMood, TriggerPath } from '../../lib/life';
 import { fmtDivider, hasRealismConfig, parseProConfig } from '../../lib/pro';
-import { newestReadUserId } from '../../lib/rhythm';
+import { isUnread, newestReadUserId } from '../../lib/rhythm';
 import { extractPatMarker } from '../../lib/markers';
 import {
   cleanDraftForDisplay, stripEchoedTimestamps, stripLeakedStateTags,
@@ -801,6 +801,11 @@ export default function ChatScreen() {
               Alert.alert('暂时不能删除', '请先等待当前回复或上下文总结完成。');
               return;
             }
+            // 节奏: deleting a message she hasn't read yet withdraws it, so the
+            // held reply written after it goes too. Checked while the row exists.
+            const withdrawnSince = isUnread(listMessages(id), message.id, Date.now())
+              ? message.createdAt
+              : null;
             try {
               if (!deleteMessageAndResetContext(id, message.id)) {
                 Alert.alert('消息已变化', '这条消息可能已被删除，请刷新后重试。');
@@ -811,7 +816,7 @@ export default function ChatScreen() {
               return;
             }
             try {
-              await cancelConversationOutreach(id);
+              await cancelConversationOutreach(id, withdrawnSince);
             } catch {
               Alert.alert(
                 '消息已删除',

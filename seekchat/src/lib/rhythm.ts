@@ -43,11 +43,16 @@ export function availabilityAt(schedule: ScheduleEntry[] | undefined, now: Date)
 
 const between = (rand: () => number, lo: number, hi: number): number => lo + rand() * (hi - lo);
 
+// Asleep: her 已读 lands within this many minutes of waking and her held reply
+// after it, so the reply never arrives before the receipt (two overlapping
+// draws used to cross ~18% of the time).
+const WAKE_READ_BY_MIN = 3;
+
 /** When she "reads" a message sent now — the 已读 stamp. */
 export function computeReadAt(avail: Availability, nowMs: number, rand: () => number): number {
   switch (avail.state) {
     case 'asleep':
-      return avail.wakeAt + between(rand, 2, 10) * 60000;
+      return avail.wakeAt + between(rand, 2, WAKE_READ_BY_MIN) * 60000;
     case 'busy':
       return Math.min(avail.until, nowMs + between(rand, 3, 15) * 60000);
     default:
@@ -59,7 +64,7 @@ export function computeReadAt(avail: Availability, nowMs: number, rand: () => nu
 export function deferDeliveryAt(avail: Availability, nowMs: number, rand: () => number): number {
   switch (avail.state) {
     case 'asleep':
-      return Math.max(nowMs + 60000, avail.wakeAt + between(rand, 3, 20) * 60000);
+      return Math.max(nowMs + 60000, avail.wakeAt + between(rand, WAKE_READ_BY_MIN, 20) * 60000);
     case 'busy':
       return Math.max(nowMs + 60000, avail.until + between(rand, 1, 5) * 60000);
     default:
@@ -107,17 +112,35 @@ export const deferredDirective = (activity: string, deliverAt: Date): string =>
   `${String(deliverAt.getMinutes()).padStart(2, '0')}），回过头来认真回复对方之前发来的消息。` +
   '可以先提一句刚才在忙什么。';
 
-/** Which user rows to stamp 已读 under: the newest one whose readAt has passed. */
-export function newestReadUserId(
-  rows: { id: string; role: string; kind: string; readAt?: number | null }[],
-  nowMs: number,
-): string | null {
+type ReadRow = { id: string; role: string; kind: string; readAt?: number | null };
+
+/** Which user row to stamp 已读 under: the newest one she has read. A stamped
+ *  row is read once its readAt passes, or as soon as she sends anything after
+ *  it (a reply proves she read it). Unstamped rows (作息感知 off) never are. */
+export function newestReadUserId(rows: ReadRow[], nowMs: number): string | null {
+  let herLater = false; // she has sent something below this row
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i];
+    if (r.role === 'assistant') {
+      // meta/experience rows are ambience, not her texting (as in fireTrigger).
+      if (r.kind !== 'meta' && r.kind !== 'experience') herLater = true;
+      continue;
+    }
     if (r.role !== 'user' || r.kind === 'trigger') continue;
-    if (r.readAt != null && r.readAt <= nowMs) return r.id;
+    if (r.readAt != null && (herLater || r.readAt <= nowMs)) return r.id;
     // The newest user row not yet read hides the receipt of older ones? No —
     // WeChat shows 已读 only on the last read message; keep scanning.
   }
   return null;
+}
+
+/** Is this row still unread — no 已读 on it or on any row below it? Deleting
+ *  such a message withdraws it, so the held reply written after it goes too.
+ *  Her rows, unstamped rows and unknown ids count as read. */
+export function isUnread(rows: ReadRow[], id: string, nowMs: number): boolean {
+  const at = rows.findIndex((r) => r.id === id);
+  const r = rows[at];
+  if (!r || r.role !== 'user' || r.kind === 'trigger' || r.readAt == null) return false;
+  const readId = newestReadUserId(rows, nowMs);
+  return readId == null || rows.findIndex((x) => x.id === readId) < at;
 }

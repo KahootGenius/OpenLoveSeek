@@ -7,7 +7,7 @@ import {
 } from '../lib/perception';
 import {
   availabilityAt, busyDirective, computeReadAt, decideRhythm, deferDeliveryAt, deferredDirective,
-  newestReadUserId,
+  isUnread, newestReadUserId,
 } from '../lib/rhythm';
 import {
   buildDayPrompt, dayEventsLine, dayKeyOf, needsDaySeed, parseDayEvents, parseDayLog, todaysEvents,
@@ -195,7 +195,75 @@ describe('rhythm', () => {
     ];
     expect(newestReadUserId(rows, 200)).toBe('a');
     expect(newestReadUserId(rows, 600)).toBe('c');
-    expect(newestReadUserId(rows, 50)).toBeNull();
+    // Her reply b follows a, so a counts as read before its own stamp.
+    expect(newestReadUserId(rows, 50)).toBe('a');
+    expect(newestReadUserId(rows.slice(2), 50)).toBeNull(); // nothing answered, nothing due
+  });
+
+  it('counts anything she sends as proof she read the messages above it', () => {
+    const asleep = [{ id: 'u1', role: 'user', kind: 'normal', readAt: 900 }];
+    expect(newestReadUserId(asleep, 100)).toBeNull();
+    // Dev-mode ⏳ notes and carried-home experience rows are not her texting.
+    const ambience = [
+      ...asleep,
+      { id: 'm', role: 'assistant', kind: 'meta', readAt: null },
+      { id: 'x', role: 'assistant', kind: 'experience', readAt: null },
+    ];
+    expect(newestReadUserId(ambience, 100)).toBeNull();
+    // Her busy short line (or a sticker) lands before u1's stamp: u1 is read.
+    const replied = [...ambience, { id: 's', role: 'assistant', kind: 'sticker', readAt: null }];
+    expect(newestReadUserId(replied, 100)).toBe('u1');
+    // A newer message she hasn't answered still waits for its own stamp.
+    const newer = [...replied, { id: 'u2', role: 'user', kind: 'normal', readAt: 950 }];
+    expect(newestReadUserId(newer, 100)).toBe('u1');
+    expect(newestReadUserId(newer, 950)).toBe('u2');
+    // Unstamped rows (作息感知 off when sent) never show 已读, reply or not.
+    expect(newestReadUserId([
+      { id: 'u0', role: 'user', kind: 'normal', readAt: null },
+      { id: 'a0', role: 'assistant', kind: 'normal', readAt: null },
+    ], 100)).toBeNull();
+  });
+
+  it('never lands an asleep reply before its 已读, whatever the draws', () => {
+    const nowMs = at(2).getTime();
+    const asleep = availabilityAt(SCHED, at(2));
+    const draws = [0, 0.25, 0.5, 0.75, 0.999999];
+    for (const r of draws) {
+      const readAt = computeReadAt(asleep, nowMs, () => r);
+      for (const d of draws) {
+        expect(deferDeliveryAt(asleep, nowMs, () => d)).toBeGreaterThan(readAt);
+        const held = decideRhythm({
+          avail: asleep, enabled: true, triggerTurn: false, lastShortUntil: null, nowMs, rand: () => d,
+        });
+        expect(held.deliverAt).toBeGreaterThan(readAt);
+      }
+    }
+  });
+
+  it('keeps the busy order: read by the end of the slot, the full reply after it', () => {
+    const nowMs = at(10).getTime();
+    const busy = availabilityAt(SCHED, at(10)) as { state: 'busy'; activity: string; until: number };
+    for (const r of [0, 0.5, 0.999999]) {
+      expect(computeReadAt(busy, nowMs, () => r)).toBeLessThanOrEqual(busy.until);
+      expect(deferDeliveryAt(busy, nowMs, () => r)).toBeGreaterThan(busy.until);
+    }
+  });
+
+  it('tells a still-unread message (deleting it withdraws it) from one she has read', () => {
+    const rows = [
+      { id: 'old', role: 'user', kind: 'normal', readAt: 100 },
+      { id: 'her', role: 'assistant', kind: 'normal', readAt: null },
+      { id: 'u1', role: 'user', kind: 'normal', readAt: 940 },
+      { id: 'u2', role: 'user', kind: 'normal', readAt: 910 },
+    ];
+    expect(isUnread(rows, 'u1', 500)).toBe(true); // asleep: no 已读 yet
+    expect(isUnread(rows, 'u2', 500)).toBe(true);
+    expect(isUnread(rows, 'old', 500)).toBe(false); // answered history
+    expect(isUnread(rows, 'her', 500)).toBe(false); // her own message
+    expect(isUnread(rows, 'u1', 920)).toBe(false); // u2 is read, so u1 above it is too
+    expect(isUnread(rows, 'u2', 920)).toBe(false);
+    expect(isUnread(rows, 'missing', 500)).toBe(false);
+    expect(isUnread([{ id: 'n', role: 'user', kind: 'normal', readAt: null }], 'n', 500)).toBe(false);
   });
 });
 

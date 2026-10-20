@@ -342,7 +342,7 @@ export default function SettingsScreen() {
       setPref('backgroundReach', '0');
       setBgReach(false);
       void bg().disableBackgroundReach();
-      void bg().cancelAllOutreach(); // stop any already-scheduled notifications
+      void bg().cancelAllOutreach(); // stop scheduled outreach (her held replies still arrive)
       return;
     }
     setBgConsentOpen(true); // serious setting — always re-consent
