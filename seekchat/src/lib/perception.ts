@@ -10,7 +10,7 @@ import { renderPrompt } from './prompts';
 import { normalizeBirthday } from './calendar';
 import type { Attitude, Judgement, ShapingState } from './shaping';
 import { MAX_PORTRAIT_TEXT, PORTRAIT_ADDS_PER_TURN } from './shaping';
-import { MAX_MEMORY_TEXT, MEMORY_ADDS_PER_REPLY } from './memory';
+import { MAX_MEMORY_ENTRIES, MAX_MEMORY_TEXT, MEMORY_ADDS_PER_REPLY } from './memory';
 import type { LengthChoice, TempChoice } from './temp';
 
 export const CLOSENESS_START = 40;
@@ -194,6 +194,20 @@ export const clampCloseness = (n: number): number => Math.min(100, Math.max(0, M
 export function followUpAtFor(now: Date, days: number): number {
   const n = Math.min(MAX_FOLLOWUP_DAYS, Math.max(1, Math.round(days)));
   return new Date(now.getFullYear(), now.getMonth(), now.getDate() + n, 10, 0, 0, 0).getTime();
+}
+
+/** Pure. The 记忆库 cap holds for these writes too (the marker path gets it
+ *  from applyMemoryOps): facts take the room left first, then follow-ups.
+ *  Perception never deletes, so a full vault takes nothing until she prunes
+ *  with [忘记:] or the user edits the vault in developer mode. */
+export function fitPerceptionWrites<F>(
+  entryCount: number,
+  facts: string[],
+  followUps: F[],
+): { facts: string[]; followUps: F[] } {
+  const room = Math.max(0, MAX_MEMORY_ENTRIES - entryCount);
+  const kept = facts.slice(0, room);
+  return { facts: kept, followUps: followUps.slice(0, room - kept.length) };
 }
 
 /** One line of meaning for the state block — the number alone tells her nothing. */

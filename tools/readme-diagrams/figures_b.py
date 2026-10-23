@@ -5,7 +5,7 @@ from svg import Canvas, tw, INK, PAPER, BLUE, TEAL, VERM
 
 # ---------------------------------------------------------------------------------
 def rhythm():
-    W, H = 960, 578
+    W, H = 960, 594
     c = Canvas("rhythm", W, H,
                "Rhythm: with a schedule, her current activity decides between an ordinary reply, one short busy line "
                "now with the full reply at the slot's end, or silence until she wakes")
@@ -36,17 +36,18 @@ def rhythm():
 
     c.hline(20, 940, 334, op=0.2)
     notes = [
-        "Read receipts are stamped when the user sends: free +3–45 s · busy within 3–15 min, by the slot's end · asleep at wake-up +2–10 min.",
+        "Read receipts are stamped when the user sends: free +3–45 s · busy within 3–15 min, by the slot's end · asleep at wake-up +2–3 min.",
+        "Anything she sends also marks the messages above it as read, since replying proves she saw them.",
         "A deferred reply is written immediately under a “you just got free” directive, then handed to the scheduled-message store with an OS notification.",
         "It folds into the chat at its time with no trigger row and is never treated as stale.",
     ]
     for i, n in enumerate(notes):
         c.text(20, 354 + i * 16, n, 10.5, anchor="start", opacity=0.85)
 
-    x0, x1, y = 50, 930, 506
+    x0, x1, y = 50, 930, 522
     px = (x1 - x0) / 24.0
     X = lambda h: x0 + h * px
-    c.eyebrow(20, 404, "A WORKED DAY · sleep 23:30–07:00 · work 09:00–18:00")
+    c.eyebrow(20, 420, "A WORKED DAY · sleep 23:30–07:00 · work 09:00–18:00")
     for a, b, label in ((0, 7, "asleep"), (9, 18, "at work"), (23.5, 24, None)):
         c.rect(X(a), y - 10, X(b) - X(a), 20, 4, sw=0.6, fill=INK, fill_op=0.08)
         if label:
@@ -67,7 +68,7 @@ def rhythm():
                weight=(600 if hers else None), halo=True)
 
     ev(1 + 10 / 60, "01:10 user writes", False, 26)
-    ev(7 + 6 / 60, "07:06 read", False, 40, "left")
+    ev(7 + 2 / 60, "07:02 read", False, 40, "left")
     ev(7 + 12 / 60, "07:12 full reply lands", True, 62, "right")
     ev(14 + 2 / 60, "14:02 user writes", False, 40, "left")
     ev(14 + 3 / 60, "14:03 “in a meeting, later”", True, 62, "right")
@@ -288,7 +289,7 @@ def workflow():
         (0, top_y, ["Asks or reports", "a feature to build, or", "a bug seen on device"], "NEXT.md backlog"),
         (1, bot_y, ["Assesses", "proposes a design, or", "root-causes the bug"], "options + a recommendation"),
         (2, top_y, ["Decides", "approves, adjusts or", "redirects the design"], "approved spec"),
-        (3, bot_y, ["Builds", "spec → plan → TDD →", "review → APK"], "specs · plans · 641 tests"),
+        (3, bot_y, ["Builds", "spec → plan → TDD →", "review → APK"], "specs · plans · 654 tests"),
         (4, top_y, ["Tests", "installs the APK and", "uses it day to day"], "field reports → NEXT.md"),
     ]
     for col, y, lines, artifact in nodes:
@@ -313,5 +314,5 @@ def workflow():
     c.arrow([(xs[4] + NW / 2, top_y), (xs[4] + NW / 2, 22), (xs[0] + NW / 2, 22), (xs[0] + NW / 2, top_y)], dash="6 4")
     c.text((xs[0] + xs[4] + NW) / 2, 16, "next request or field report", 10.5, italic=True, halo=True, opacity=0.85)
     c.text(20, H - 16, "Claude Code ran on Claude Fable 5 and Claude Opus 4.8 (v1.0–v2.7), Claude Fable 5.1 (v2.8–v3.0) "
-                       "and Claude Opus 5.5 (this README).", 11, anchor="start", opacity=0.8)
+                       "and Claude Opus 5.5 (the October rhythm fixes and this README).", 11, anchor="start", opacity=0.8)
     return c

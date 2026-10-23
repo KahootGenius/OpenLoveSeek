@@ -55,8 +55,8 @@ import {
   mergeLifeIntoConfig, parseShaping, type ShapingEvent,
 } from './shaping';
 import {
-  buildPerceptionPrompt, clampCloseness, CLOSENESS_START, closenessLine, followUpAtFor,
-  parsePerception, shouldPerceive, toJudgement,
+  buildPerceptionPrompt, clampCloseness, CLOSENESS_START, closenessLine, fitPerceptionWrites,
+  followUpAtFor, parsePerception, shouldPerceive, toJudgement,
 } from './perception';
 import {
   availabilityAt, busyDirective, computeReadAt, decideRhythm, deferredDirective,
@@ -628,12 +628,18 @@ async function runTurnInner(
         if (perc.register && getTempMode() === 'dynamic') temperature = TEMP_BY_CHOICE[perc.register];
         if (perc.length) promptParts.lengthHint = renderPrompt(LENGTH_PROMPT_KEY[perc.length]);
         userMood = perc.userMood;
-        if (memoryOn) {
-          for (const t of perc.facts) insertMemory(conversationId, t);
-          for (const f of perc.followUps) {
-            insertMemory(conversationId, f.text, followUpAtFor(nowD, f.days));
-          }
+        // The vault cap holds here too. Count it fresh: `known` was read
+        // before the await, and another writer may have added since.
+        const saved = memoryOn
+          ? fitPerceptionWrites(listMemories(conversationId).length, perc.facts, perc.followUps)
+          : { facts: [], followUps: [] };
+        for (const t of saved.facts) insertMemory(conversationId, t);
+        for (const f of saved.followUps) {
+          insertMemory(conversationId, f.text, followUpAtFor(nowD, f.days));
         }
+        const unsaved = memoryOn
+          ? perc.facts.length + perc.followUps.length - saved.facts.length - saved.followUps.length
+          : 0;
         if (perc.closeness !== 0) {
           closeness = clampCloseness(closeness + perc.closeness);
           setConversationCloseness(conversationId, closeness);
@@ -656,8 +662,9 @@ async function runTurnInner(
           perc.register && `语气「${perc.register}」`,
           perc.length && `篇幅「${perc.length}」`,
           perc.userMood && `对方「${perc.userMood}」`,
-          perc.facts.length > 0 && `记了${perc.facts.length}条`,
-          perc.followUps.length > 0 && `跟进${perc.followUps.length}件`,
+          saved.facts.length > 0 && `记了${saved.facts.length}条`,
+          saved.followUps.length > 0 && `跟进${saved.followUps.length}件`,
+          unsaved > 0 && `记忆库已满，没记下${unsaved}条`,
           perc.closeness !== 0 && `亲密度${perc.closeness > 0 ? '+' : '-'}1 → ${closeness}`,
           perc.birthday && `生日 ${perc.birthday}`,
         ].filter(Boolean);

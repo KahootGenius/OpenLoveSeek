@@ -3,7 +3,7 @@ import {
 } from '../lib/calendar';
 import {
   buildPerceptionPrompt, CLOSENESS_START, clampCloseness, closenessLine, emptyPerception,
-  followUpAtFor, parsePerception, shouldPerceive, toJudgement,
+  fitPerceptionWrites, followUpAtFor, parsePerception, shouldPerceive, toJudgement,
 } from '../lib/perception';
 import {
   availabilityAt, busyDirective, computeReadAt, decideRhythm, deferDeliveryAt, deferredDirective,
@@ -17,7 +17,7 @@ import {
 } from '../lib/texture';
 import { extractStateTag } from '../lib/statetag';
 import { buildStateBlock } from '../lib/pro';
-import { buildMemoryEvidence, buildMemoryInstructions, dueFollowUps } from '../lib/memory';
+import { buildMemoryEvidence, buildMemoryInstructions, dueFollowUps, MAX_MEMORY_ENTRIES } from '../lib/memory';
 import { initialShaping, advanceTurn } from '../lib/shaping';
 import type { MemoryEntry } from '../lib/types';
 
@@ -139,6 +139,17 @@ describe('perception', () => {
     const due = new Date(followUpAtFor(new Date(2026, 8, 13, 22, 30), 2));
     expect([due.getMonth(), due.getDate(), due.getHours()]).toEqual([8, 15, 10]);
     expect(new Date(followUpAtFor(new Date(2026, 8, 13), 500)).getDate()).toBe(new Date(2026, 8, 13 + 60).getDate());
+  });
+
+  it('fits its memory writes into the vault cap: facts first, then follow-ups, nothing once full', () => {
+    const facts = ['对方在学吉他', '对方怕打雷'];
+    const follow = [{ text: '周五的面试怎么样', days: 3 }, { text: '吉他课第一节', days: 7 }];
+    expect(fitPerceptionWrites(10, facts, follow)).toEqual({ facts, followUps: follow });
+    expect(fitPerceptionWrites(MAX_MEMORY_ENTRIES - 3, facts, follow)).toEqual({ facts, followUps: [follow[0]] });
+    expect(fitPerceptionWrites(MAX_MEMORY_ENTRIES - 1, facts, follow)).toEqual({ facts: [facts[0]], followUps: [] });
+    expect(fitPerceptionWrites(MAX_MEMORY_ENTRIES, facts, follow)).toEqual({ facts: [], followUps: [] });
+    // a vault already past the cap (written before this fix) takes nothing more
+    expect(fitPerceptionWrites(MAX_MEMORY_ENTRIES + 3, facts, follow)).toEqual({ facts: [], followUps: [] });
   });
 });
 

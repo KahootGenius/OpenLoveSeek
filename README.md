@@ -6,7 +6,7 @@
 [![Expo SDK 57](https://img.shields.io/badge/Expo_SDK-57-000020?logo=expo&logoColor=white)](https://docs.expo.dev/versions/v57.0.0/)
 [![React Native 0.86](https://img.shields.io/badge/React_Native-0.86-61DAFB?logo=react&logoColor=black)](https://reactnative.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tests: 641 passing](https://img.shields.io/badge/tests-641_passing-2EA043)](#running-it)
+[![Tests: 654 passing](https://img.shields.io/badge/tests-654_passing-2EA043)](#running-it)
 [![Built with Claude Code](https://img.shields.io/badge/built_with-Claude_Code-D97757?logo=anthropic&logoColor=white)](#how-it-was-built)
 
 LoveSeek is a phone-only app built with Expo and React Native in TypeScript. You bring your own model key (DeepSeek or GLM), and every conversation, memory and setting stays on the device. The app's interface and prompts are in Chinese. This README is in English, and Chinese appears only where it is the literal name of something in the app. Characters are female by default (the persona card also offers a boyfriend), so the text below says "she".
@@ -34,9 +34,9 @@ LoveSeek is a phone-only app built with Expo and React Native in TypeScript. You
 | **Platform** | Android, installed as a sideloaded APK. Expo SDK 57, React Native 0.86, TypeScript |
 | **Models** | Bring your own keys: DeepSeek or GLM (Zhipu) for chat, fal.ai Seedream for photos, MiniMax for voice |
 | **Data** | On the device only: SQLite (schema v20), API keys in SecureStore. No server, no account, no telemetry |
-| **Size** | About 18,000 lines of app TypeScript, 5,400 lines of tests, and a small Kotlin native module |
-| **Tests** | 50 Jest suites, 641 tests, all passing |
-| **History** | v1.0 to v3.0, July to September 2026 |
+| **Size** | About 18,000 lines of app TypeScript, 5,600 lines of tests, and a small Kotlin native module |
+| **Tests** | 50 Jest suites, 654 tests, all passing |
+| **History** | v1.0 to v3.0, July to September 2026, plus a fix build on October 20 |
 
 ## What it does
 
@@ -120,7 +120,7 @@ v3.0 folded two earlier calls into this one. Before the character speaks, a util
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/rhythm-dark.svg">
-  <img alt="Rhythm. With a schedule, her current activity decides between an ordinary reply, one short busy line now with the full reply at the end of her slot, or silence until she wakes. A worked day shows a 1 a.m. message answered at 7:12, and a 2 p.m. message answered briefly at once and fully at 6 p.m." src="docs/readme/rhythm-light.svg">
+  <img alt="Rhythm. With a schedule, her current activity decides between an ordinary reply, one short busy line now with the full reply at the end of her slot, or silence until she wakes. A worked day shows a 1 a.m. message read at 7:02 and answered at 7:12, and a 2 p.m. message answered briefly at once and fully at 6 p.m." src="docs/readme/rhythm-light.svg">
 </picture>
 
 The full reply is written the moment the user sends and delivered later. The scheduled-message store and an OS notification bring it into the chat on time, even if the app is closed.
@@ -166,14 +166,14 @@ LoveSeek is the work of one person and an AI coding agent, with a clear split of
 | | KahootGenius | Claude Code |
 |---|---|---|
 | **Role** | Design, testing, reporting | Coding, code-level debugging |
-| **In practice** | Conceived the app and its features, made the design calls, approved each spec before work began, tested the builds on a real Android phone, and reported what broke with the symptoms seen | Wrote all of the application code (TypeScript and the Kotlin module) and its 641 unit tests, traced field reports to their causes in the code and fixed them, ran review passes, and built the APKs. It also wrote up a design spec and a specific implementation plan for each design-calls|
+| **In practice** | Conceived the app and its features, made the design calls, approved each spec before work began, tested the builds on a real Android phone, and reported what broke with the symptoms seen | Wrote all of the application code (TypeScript and the Kotlin module) and its 654 unit tests, traced field reports to their causes in the code and fixed them, ran review passes, and built the APKs. It also wrote up a design spec and a specific implementation plan for each design-calls|
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/workflow-dark.svg">
   <img alt="How it was built. KahootGenius asks for a feature or reports a bug, Claude Code assesses and recommends, KahootGenius decides, Claude Code builds and verifies through spec, plan, test-driven code, review and an APK, and KahootGenius tests the APK on a phone. Then the loop repeats." src="docs/readme/workflow-light.svg">
 </picture>
 
-**Models.** Claude Code ran on four Claude models over the project: **Claude Fable 5** and **Claude Opus 4.8** for v1.0 to v2.7 (July 2026), **Claude Fable 5.1** for v2.8 to v3.0 (September 2026), and **Claude Opus 5.5** for this README and its diagrams (October 2026). Commits carry a `Co-Authored-By` trailer naming the model that wrote them. Each wave followed the same loop of spec, plan, test-driven implementation and review, using the Superpowers workflow skills for Claude Code, which is why every wave has a written spec and plan.
+**Models.** Claude Code ran on four Claude models over the project: **Claude Fable 5** and **Claude Opus 4.8** for v1.0 to v2.7 (July 2026), **Claude Fable 5.1** for v2.8 to v3.0 (September 2026), and **Claude Opus 5.5** for the October rhythm fixes, this README and its diagrams (October 2026). Commits carry a `Co-Authored-By` trailer naming the model that wrote them. Each wave followed the same loop of spec, plan, test-driven implementation and review, using the Superpowers workflow skills for Claude Code, which is why every wave has a written spec and plan.
 
 **Design calls on the record.** Each wave's design spec logs who decided what. A few of KahootGenius's calls:
 
@@ -224,7 +224,7 @@ You need Node.js 20 or newer. Native builds also need the Android SDK and JDK 21
 cd seekchat
 npm install
 npx expo start          # run in a development build; Expo Go covers most screens
-npm test                # 50 Jest suites, 641 tests
+npm test                # 50 Jest suites, 654 tests
 npx tsc --noEmit        # typecheck
 npx expo run:android    # build and install a debug build on a connected device
 ```
